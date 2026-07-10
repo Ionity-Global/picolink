@@ -1,0 +1,5 @@
+# IONITY PicoLink — allow console access to the CDC log port without root
+# VID 2e8a (Raspberry Pi) / PID 986a (IONITY PicoLink)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="986a", MODE="0666", TAG+="uaccess", SYMLINK+="picolink"
+# BOOTSEL (RPI-RP2) flashing without root
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0003", MODE="0666", TAG+="uaccess"

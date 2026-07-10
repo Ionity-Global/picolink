@@ -1,0 +1,29 @@
+# build outputs
+build/
+firmware/build/
+*.elf
+*.bin
+*.hex
+*.dis
+*.map
+# keep the shipped prebuilt UF2s
+!firmware/prebuilt/*.uf2
+
+# node / electron
+node_modules/
+desktop/dist/
+desktop/out/
+desktop/release/
+*.log
+npm-debug.log*
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# python
+__pycache__/
+*.pyc

@@ -1,0 +1,46 @@
+name: firmware
+
+on:
+  push:
+    paths: ['firmware/**', '.github/workflows/firmware.yml']
+  pull_request:
+    paths: ['firmware/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [pico_w, pico2_w]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+
+      - name: Pico SDK
+        run: |
+          git clone --depth 1 https://github.com/raspberrypi/pico-sdk "$HOME/pico-sdk"
+          cd "$HOME/pico-sdk"
+          git submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver lib/btstack lib/lwip
+
+      - name: Build ${{ matrix.board }}
+        run: |
+          export PICO_SDK_PATH="$HOME/pico-sdk"
+          cmake -S firmware -B build -GNinja -DPICO_BOARD=${{ matrix.board }}
+          ninja -C build
+          mv build/ionity_picolink.uf2 ionity-picolink-${{ matrix.board }}.uf2
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ionity-picolink-${{ matrix.board }}
+          path: ionity-picolink-${{ matrix.board }}.uf2
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ionity-picolink-${{ matrix.board }}.uf2

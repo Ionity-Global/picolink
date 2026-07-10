@@ -1,0 +1,52 @@
+{
+  "name": "ionity-picolink-console",
+  "productName": "IONITY PicoLink Console",
+  "version": "1.0.0",
+  "description": "Companion console for the IONITY PicoLink USB Bluetooth/BLE dongle — live logs, radio control, stats. Works fully offline.",
+  "author": "Ionity Global (Pty) Ltd <ai@ionity.today>",
+  "license": "MIT",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "build:ui": "vite build",
+    "start": "npm run build:ui && electron .",
+    "dev": "vite build --watch & electron .",
+    "dist": "npm run build:ui && electron-builder --publish never"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.4.19"
+  },
+  "build": {
+    "appId": "today.ionity.picolink",
+    "productName": "IONITY PicoLink Console",
+    "files": [
+      "electron/**",
+      "dist/**",
+      "assets/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "deleteAppDataOnUninstall": true
+    }
+  }
+}

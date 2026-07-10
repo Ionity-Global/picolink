@@ -1,0 +1,39 @@
+name: desktop
+
+on:
+  push:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Package
+        working-directory: desktop
+        run: npm run dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: picolink-console-${{ matrix.os }}
+          path: |
+            desktop/release/**/*.exe
+            desktop/release/**/*.AppImage
+            desktop/release/**/*.deb
+            desktop/dist_electron/**
+            desktop/dist/**
+          if-no-files-found: ignore

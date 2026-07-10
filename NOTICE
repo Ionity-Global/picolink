@@ -1,0 +1,17 @@
+IONITY PicoLink
+© 2026 Ionity Global (Pty) Ltd — www.ionity.today · www.ionity.co.za
+
+The IONITY name, the IONITY / AEDI logos, wordmarks and all brand assets in
+the assets/ directory are the exclusive property of Ionity Global (Pty) Ltd
+and Johan Wilhelm van Antwerp (Antwerp Designs). All rights reserved (TM²).
+
+The MIT license applies to the source code only. Brand assets may not be
+reused in third-party works without written permission.
+
+Third-party components:
+- Raspberry Pi Pico SDK (BSD-3-Clause) — Raspberry Pi (Trading) Ltd
+- TinyUSB (MIT) — Ha Thach
+- CYW43xx driver & firmware (see pico-sdk lib/cyw43-driver licensing)
+- Electron, React, Vite, serialport (MIT and similar)
+
+POLICY 986 AED
