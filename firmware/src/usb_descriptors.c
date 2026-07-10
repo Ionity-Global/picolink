@@ -41,8 +41,9 @@ uint8_t const *tud_descriptor_device_cb(void) {
 /* Configuration descriptor                                            */
 /* ------------------------------------------------------------------ */
 enum {
-    ITF_NUM_BTH = 0,          /* interface 0 (+ optional ISO itf)      */
-    ITF_NUM_CDC = ITF_NUM_BTH + 1,
+    ITF_NUM_BTH = 0,
+    ITF_NUM_BTH_ISO,
+    ITF_NUM_CDC,
     ITF_NUM_CDC_DATA,
     ITF_NUM_MSC,
     ITF_NUM_TOTAL
@@ -51,11 +52,11 @@ enum {
 #define EPNUM_BT_EVT     0x81   /* interrupt IN  — HCI events           */
 #define EPNUM_BT_ACL_OUT 0x02   /* bulk OUT      — ACL host->ctrl       */
 #define EPNUM_BT_ACL_IN  0x82   /* bulk IN       — ACL ctrl->host       */
-#define EPNUM_CDC_NOTIF  0x83
-#define EPNUM_CDC_OUT    0x04
-#define EPNUM_CDC_IN     0x84
-#define EPNUM_MSC_OUT    0x05
-#define EPNUM_MSC_IN     0x85
+#define EPNUM_CDC_NOTIF  0x84
+#define EPNUM_CDC_OUT    0x05
+#define EPNUM_CDC_IN     0x85
+#define EPNUM_MSC_OUT    0x06
+#define EPNUM_MSC_IN     0x86
 
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_BTH_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MSC_DESC_LEN)
 
@@ -65,7 +66,7 @@ uint8_t const desc_configuration[] = {
 
     /* Bluetooth HCI: itf, stridx, ep-evt, evt size, interval, ep-acl-IN, ep-acl-OUT, acl size */
     TUD_BTH_DESCRIPTOR(ITF_NUM_BTH, 0, EPNUM_BT_EVT, CFG_TUD_BTH_EVENT_EPSIZE, 1,
-                       EPNUM_BT_ACL_IN, EPNUM_BT_ACL_OUT, CFG_TUD_BTH_DATA_EPSIZE),
+                       EPNUM_BT_ACL_IN, EPNUM_BT_ACL_OUT, CFG_TUD_BTH_DATA_EPSIZE, 0, 9),
 
     /* CDC: itf, string idx, ep notif, notif size, ep out, ep in, size */
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),

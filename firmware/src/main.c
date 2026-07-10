@@ -95,12 +95,6 @@ int main(void) {
     buttons_init();
     ui_init();
 
-    /*
-     * Bring the radio fully up BEFORE attaching USB. The CYW43 BT firmware
-     * download takes ~1-2 s; if USB attached first, the host would try to
-     * enumerate while the main loop isn't servicing EP0 yet and mark the
-     * device as failed. Order: radio ready -> attach -> loop immediately.
-     */
     bool bt_ok = false;
     if (cyw43_arch_init() != 0) {
         logf_pl("FATAL: cyw43 init failed");
@@ -114,7 +108,7 @@ int main(void) {
         wifi_scan_init();
     }
 
-    tusb_init();                     /* attach: loop below answers instantly */
+    tusb_init();
     logf_pl("Ready. Waiting for host...");
 
     while (true) {

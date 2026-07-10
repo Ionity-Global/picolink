@@ -44,7 +44,7 @@ extern "C" {
 #define CFG_TUD_VENDOR           0
 
 /* BTH: no SCO/ISO audio alt-settings in v1 (keeps EP budget + no audio bridge) */
-#define CFG_TUD_BTH_ISO_ALT_COUNT  0
+#define CFG_TUD_BTH_ISO_ALT_COUNT  2
 #define CFG_TUD_BTH_EVENT_EPSIZE   64
 #define CFG_TUD_BTH_DATA_EPSIZE    64
 
