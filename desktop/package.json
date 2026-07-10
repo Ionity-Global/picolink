@@ -4,6 +4,11 @@
   "version": "1.0.0",
   "description": "Companion console for the IONITY PicoLink USB Bluetooth/BLE dongle — live logs, radio control, stats. Works fully offline.",
   "author": "Ionity Global (Pty) Ltd <ai@ionity.today>",
+  "homepage": "https://github.com/Ionity-Global/picolink",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ionity-Global/picolink.git"
+  },
   "license": "MIT",
   "private": true,
   "main": "electron/main.cjs",
@@ -26,6 +31,9 @@
   "build": {
     "appId": "today.ionity.picolink",
     "productName": "IONITY PicoLink Console",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "electron/**",
       "dist/**",
