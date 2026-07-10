@@ -1,17 +1,15 @@
 /**
- * ═══════════════════════════════════════════════════════════════════
- *  IONITY PicoLink — USB Bluetooth/BLE dongle firmware
- *  © 2026 Ionity Global (Pty) Ltd · www.ionity.today · POLICY 986 AED
- * ═══════════════════════════════════════════════════════════════════
- *
- *  Raspberry Pi Pico W (+ Waveshare Pico-OLED-1.3) →
- *  standard USB Bluetooth HCI dongle + CDC log console + installer disk.
+ * IONITY PicoLink — USB Bluetooth/BLE dongle firmware
+ * © 2026 Ionity Global (Pty) Ltd · www.ionity.today · POLICY 986 AED
+ * Pico W + Waveshare Pico-OLED-1.3 → USB BT HCI dongle + CDC console
+ * + installer disk + WiFi RADAR + core temperature.
  */
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 #include "pico/cyw43_arch.h"
+#include "hardware/adc.h"
 #include "tusb.h"
 
 #include "picolink.h"
@@ -21,16 +19,23 @@
 #include "buttons.h"
 #include "logbuf.h"
 #include "control.h"
+#include "wifi_scan.h"
 
 picolink_state_t g_pl;
 
 static volatile bool req_detach_toggle;
-static volatile int  req_radio = -1;    /* -1 none, 0 off, 1 on */
+static volatile int  req_radio = -1;
 
 void picolink_request_radio(bool on)      { req_radio = on ? 1 : 0; }
 void picolink_request_detach_toggle(void) { req_detach_toggle = true; }
 
-/* ---- TinyUSB device callbacks ---- */
+float picolink_core_temp_c(void) {
+    adc_select_input(4);
+    uint16_t raw = adc_read();
+    float v = raw * 3.3f / 4096.0f;
+    return 27.0f - (v - 0.706f) / 0.001721f;
+}
+
 void tud_mount_cb(void)   { g_pl.usb_mounted = true;  logf_pl("USB host connected"); }
 void tud_umount_cb(void)  { g_pl.usb_mounted = false; logf_pl("USB host disconnected"); }
 void tud_suspend_cb(bool remote_wakeup_en) { (void)remote_wakeup_en; logf_pl("USB suspended"); }
@@ -84,33 +89,37 @@ int main(void) {
     log_init();
     logf_pl("%s v%s", PICOLINK_PRODUCT, PICOLINK_VERSION);
 
-    buttons_init();
-    ui_init();                       /* splash */
+    adc_init();
+    adc_set_temp_sensor_enabled(true);
 
-    /* Radio core */
+    buttons_init();
+    ui_init();
+
     if (cyw43_arch_init() != 0) {
         logf_pl("FATAL: cyw43 init failed");
     }
 
-    /* USB device (BTH + CDC + MSC composite) */
     tusb_init();
 
-    sleep_ms(600);                   /* let the splash breathe */
+    sleep_ms(600);
 
     bool bt_ok = hci_bridge_init();
     if (!bt_ok) {
         g_pl.radio = RADIO_OFF;
         logf_pl("Radio unavailable - check board=Pico W");
+    } else {
+        wifi_scan_init();
     }
     logf_pl("Ready. Waiting for host...");
 
     while (true) {
-        tud_task();                  /* USB device stack             */
-        hci_bridge_task();           /* radio -> host pump           */
-        control_task();              /* CDC command protocol         */
-        log_pump_cdc();              /* stream logs to console app   */
+        tud_task();
+        hci_bridge_task();
+        control_task();
+        log_pump_cdc();
+        wifi_scan_task();
         handle_buttons();
         apply_requests();
-        ui_task();                   /* OLED refresh                 */
+        ui_task();
     }
 }

@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PICOLINK_VERSION      "1.0.0"
+#define PICOLINK_VERSION      "1.1.0"
 #define PICOLINK_PRODUCT      "IONITY PicoLink"
 #define PICOLINK_URL          "https://github.com/Ionity-Global/picolink"
 
@@ -35,20 +35,21 @@ typedef enum {
 
 typedef struct {
     volatile radio_state_t radio;
-    volatile bool     usb_mounted;     /* device configured by host       */
-    volatile bool     cdc_connected;   /* console app attached (DTR)      */
-    volatile uint32_t tx_pkts;         /* controller -> host              */
-    volatile uint32_t rx_pkts;         /* host -> controller              */
+    volatile bool     usb_mounted;
+    volatile bool     cdc_connected;
+    volatile uint32_t tx_pkts;
+    volatile uint32_t rx_pkts;
     volatile uint32_t tx_bytes;
     volatile uint32_t rx_bytes;
     volatile uint32_t drops;
     char              board[16];
-    char              serial[17];      /* unique id string                */
+    char              serial[17];
 } picolink_state_t;
 
 extern picolink_state_t g_pl;
 
-void picolink_request_radio(bool on);      /* soft on/off (bridge gate)   */
-void picolink_request_detach_toggle(void); /* full USB detach / reattach  */
+void  picolink_request_radio(bool on);
+void  picolink_request_detach_toggle(void);
+float picolink_core_temp_c(void);           /* RP2040 on-die sensor */
 
 #endif
