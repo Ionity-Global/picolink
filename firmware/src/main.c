@@ -95,21 +95,26 @@ int main(void) {
     buttons_init();
     ui_init();
 
+    /*
+     * Bring the radio fully up BEFORE attaching USB. The CYW43 BT firmware
+     * download takes ~1-2 s; if USB attached first, the host would try to
+     * enumerate while the main loop isn't servicing EP0 yet and mark the
+     * device as failed. Order: radio ready -> attach -> loop immediately.
+     */
+    bool bt_ok = false;
     if (cyw43_arch_init() != 0) {
         logf_pl("FATAL: cyw43 init failed");
+    } else {
+        bt_ok = hci_bridge_init();
     }
-
-    tusb_init();
-
-    sleep_ms(600);
-
-    bool bt_ok = hci_bridge_init();
     if (!bt_ok) {
         g_pl.radio = RADIO_OFF;
-        logf_pl("Radio unavailable - check board=Pico W");
+        logf_pl("Radio unavailable - check W board");
     } else {
         wifi_scan_init();
     }
+
+    tusb_init();                     /* attach: loop below answers instantly */
     logf_pl("Ready. Waiting for host...");
 
     while (true) {
