@@ -18,6 +18,7 @@ add_executable(ionity_picolink
     src/usb_descriptors.c
     src/hci_bridge.c
     src/wifi_scan.c
+    src/btmon.c
     src/oled.c
     src/ui.c
     src/buttons.c
@@ -46,6 +47,6 @@ target_link_libraries(ionity_picolink
 )
 
 pico_set_program_name(ionity_picolink "IONITY PicoLink")
-pico_set_program_version(ionity_picolink "1.1.0")
+pico_set_program_version(ionity_picolink "1.2.0")
 
 pico_add_extra_outputs(ionity_picolink)

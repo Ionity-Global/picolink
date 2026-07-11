@@ -43,9 +43,9 @@ void oled_init(void) {
     gpio_init(OLED_PIN_RST); gpio_set_dir(OLED_PIN_RST, GPIO_OUT);
 
     /* hardware reset */
-    gpio_put(OLED_PIN_RST, 1); sleep_ms(20);
-    gpio_put(OLED_PIN_RST, 0); sleep_ms(20);
-    gpio_put(OLED_PIN_RST, 1); sleep_ms(20);
+    gpio_put(OLED_PIN_RST, 1); sleep_ms(100);
+    gpio_put(OLED_PIN_RST, 0); sleep_ms(100);
+    gpio_put(OLED_PIN_RST, 1); sleep_ms(100);
 
     /* init sequence per Waveshare OLED_1in3 (SH1107) reference */
     static const uint8_t seq[] = {
@@ -54,7 +54,7 @@ void oled_init(void) {
         0xB0,             /* page 0                     */
         0xDC, 0x00,       /* display start line 0       */
         0x81, 0x6F,       /* contrast                   */
-        0x21,             /* vertical (page) addressing */
+        0x20,             /* PAGE addressing mode       */
         0xA0,             /* segment remap              */
         0xC0,             /* COM scan direction         */
         0xA4,             /* entire display from RAM    */
