@@ -13,7 +13,7 @@ import { analyzeSecurity } from './security.js';
 import { OPTIONAL_SERVICES, gattName, decodeValue, props as charProps } from './gatt.js';
 
 const REPO = 'https://github.com/Ionity-Global/picolink';
-const TABS = ['Dashboard', 'Security', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
+const TABS = ['Dashboard', 'Security', 'Recon', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
 
 /* trusted-device watchlist, persisted locally (Electron renderer) */
 function useTrusted() {
@@ -38,6 +38,18 @@ export default function App() {
   useEffect(() => { window.picolink?.version().then(setAppVer); }, []);
   useEffect(() => { window.picolink?.radioState(s.stat?.radio === 'on'); }, [s.stat?.radio]);
   useEffect(() => { window.picolink?.onTrayCmd((cmd) => s.send(cmd)); }, [s]);
+
+  /* accumulate every sighting into the persistent device DB + telemetry log */
+  useEffect(() => {
+    const devices = [
+      ...(s.btClassic || []).map(d => ({ ...d, kind: 'classic' })),
+      ...(s.ble || []).map(d => ({ ...d, kind: 'ble' }))
+    ];
+    if (devices.length || (s.wifi || []).length) {
+      window.picolink?.dbRecord({ devices, wifi: s.wifi, ts: Date.now() });
+    }
+  }, [s.btClassic, s.ble, s.wifi]);
+  useEffect(() => { if (s.stat) window.picolink?.telemetryLog(s.stat); }, [s.stat]);
 
   const checkUpdate = async () => {
     setUpdate({ busy: true });
@@ -95,6 +107,7 @@ export default function App() {
       <main>
         {tab === 'Dashboard'  && <Dashboard s={s} />}
         {tab === 'Security'   && <SecurityPanel s={s} sec={sec} tw={tw} />}
+        {tab === 'Recon'      && <ReconPanel s={s} />}
         {tab === 'BLE'        && <BlePanel s={s} />}
         {tab === 'Bluetooth'  && <ClassicPanel s={s} />}
         {tab === 'WiFi Radar' && <WifiPanel s={s} />}
@@ -257,6 +270,164 @@ function SecurityPanel({ s, sec, tw }) {
         )}
       </section>
     </div>
+  );
+}
+
+/* ─────────────────────────── Recon / site-survey ─────────────────────────── */
+function ReconPanel({ s }) {
+  const [loc, setLoc] = useState(null);
+  const [exp, setExp] = useState(null);
+  const wifi = s.wifi || [], ble = s.ble || [], bt = s.btClassic || [];
+  const devices = [...bt.map(d => ({ ...d, kind: 'classic' })), ...ble.map(d => ({ ...d, kind: 'ble' }))]
+    .filter(d => d.rssi !== -127).sort((a, b) => b.rssi - a.rssi);
+
+  const gps = s.stat && s.stat.gps_fix ? { lat: s.stat.lat, lng: s.stat.lng, sats: s.stat.sats } : null;
+
+  const locate = async () => {
+    setLoc({ busy: true });
+    const r = await window.picolink?.geolocate(wifi.map(n => ({ bssid: n.bssid, rssi: n.rssi, ch: n.ch })));
+    setLoc(r || { ok: false });
+  };
+  const exportSurvey = async () => {
+    setExp({ busy: true });
+    const survey = {
+      at: new Date().toISOString(), device: s.id?.serial,
+      lat: gps?.lat ?? loc?.lat, lng: gps?.lng ?? loc?.lng,
+      wifi, classic: bt, ble
+    };
+    const r = await window.picolink?.saveSurvey(survey);
+    setExp(r || { ok: false });
+  };
+
+  return (
+    <div className="stack">
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Area radar <small>· distance from the dongle (RSSI)</small></h2>
+          <div className="row-btns">
+            <button className="ghost" onClick={locate} disabled={loc?.busy}><i className="ti ti-map-pin" aria-hidden /> locate</button>
+            <button onClick={exportSurvey} disabled={exp?.busy}><i className="ti ti-download" aria-hidden /> {exp?.busy ? 'saving…' : 'export survey'}</button>
+          </div>
+        </div>
+        <AoeRadar devices={devices} />
+        <div className="recon-loc">
+          {gps && <span className="loc-ok"><i className="ti ti-satellite" aria-hidden /> GPS {gps.lat?.toFixed?.(5)}, {gps.lng?.toFixed?.(5)} ({gps.sats} sats)</span>}
+          {loc?.busy && <span className="muted">locating…</span>}
+          {loc?.ok && <span className="loc-ok"><i className="ti ti-map-pin" aria-hidden /> {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)} ±{Math.round(loc.accuracy)}m ({loc.aps} APs) · <a onClick={() => window.picolink?.openExternal(`https://maps.google.com/?q=${loc.lat},${loc.lng}`)}>map</a></span>}
+          {loc && !loc.ok && !loc.busy && <span className="muted">{loc.msg}</span>}
+          {exp?.ok && <span className="loc-ok">saved {exp.counts.wifi}AP/{exp.counts.classic}BT/{exp.counts.ble}BLE · <a onClick={() => window.picolink?.showItem(exp.csvPath)}>open</a></span>}
+        </div>
+        <p className="insight-note">Passive site-survey of what’s openly broadcast around the dongle, geotagged by GPS (offline) or Wi-Fi positioning (needs GOOGLE_GEOLOCATION_KEY). Bearing isn’t shown — a single antenna gives distance, not direction. Lab / owned-environment use.</p>
+      </section>
+
+      <section className="panel">
+        <h2>Live survey — devices &amp; access points <small>({devices.length + wifi.length})</small></h2>
+        <table className="tbl">
+          <thead><tr><th>Kind</th><th>Name / SSID</th><th>ID</th><th>Detail</th><th>dBm</th><th>~m</th></tr></thead>
+          <tbody>
+            {wifi.map((n, i) => (
+              <tr key={'w' + i}><td className="dtype"><i className="ti ti-wifi" aria-hidden /> wifi</td>
+                <td>{n.ssid || '(hidden)'}</td><td className="mono">{n.bssid || '—'}</td>
+                <td>{(n.sec || '—').toUpperCase()} ch{n.ch}</td><td className="mono">{n.rssi}</td><td>—</td></tr>
+            ))}
+            {devices.map((d, i) => {
+              const [label, icon] = deviceType(d);
+              return (<tr key={'d' + i}><td className="dtype"><i className={`ti ${icon}`} aria-hidden /> {d.kind}</td>
+                <td>{d.name || '(unknown)'}</td><td className="mono">{d.addr}</td>
+                <td>{d.cat || label}</td><td className="mono">{d.rssi}</td>
+                <td className="mono">{d.dist_m != null ? d.dist_m.toFixed(1) : '—'}</td></tr>);
+            })}
+          </tbody>
+        </table>
+      </section>
+
+      <DbView />
+    </div>
+  );
+}
+
+/* persistent device database — accumulates across sessions with distances */
+function DbView() {
+  const [db, setDb] = useState({ size: 0, records: [] });
+  const [q, setQ] = useState('');
+  const refresh = () => window.picolink?.dbSummary().then(r => r && setDb(r));
+  useEffect(() => { refresh(); const iv = setInterval(refresh, 5000); return () => clearInterval(iv); }, []);
+  const recs = [...(db.records || [])]
+    .filter(e => !q || (e.name || e.ssid || e.key || '').toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => b.last - a.last).slice(0, 300);
+  const ago = (t) => { const s = Math.round((Date.now() - t) / 1000);
+    return s < 60 ? s + 's' : s < 3600 ? Math.round(s / 60) + 'm' : Math.round(s / 3600) + 'h'; };
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Device database <small>· {db.size} tracked with distances</small></h2>
+        <div className="row-btns">
+          <input placeholder="filter…" value={q} onChange={e => setQ(e.target.value)} style={{ width: 130 }} />
+          <button className="ghost" onClick={() => window.picolink?.dbExport().then(r => r?.path && window.picolink.showItem(r.path))}>export</button>
+          <button className="ghost" onClick={() => { if (confirm('Clear the device database?')) window.picolink?.dbClear().then(refresh); }}>clear</button>
+        </div>
+      </div>
+      {recs.length === 0 ? <p className="hint">Building up… every device the dongle hears is logged here with its closest range, sighting count and location tag, persisted across sessions.</p> : (
+        <table className="tbl">
+          <thead><tr><th>Kind</th><th>Name / SSID</th><th>Seen</th><th>Best dBm</th><th>Closest</th><th>First</th><th>Last</th></tr></thead>
+          <tbody>
+            {recs.map(e => (
+              <tr key={e.key}>
+                <td className="mono">{e.kind}</td>
+                <td>{e.name || e.ssid || <span className="mono">{e.key.split(':').slice(1).join(':')}</span>}{e.cat && <span className="cat-badge" style={{ marginLeft: 6 }}>{e.cat}</span>}</td>
+                <td className="mono">{e.count}</td>
+                <td className="mono">{e.bestRssi}</td>
+                <td className="mono">{e.minDist != null ? e.minDist.toFixed(1) + 'm' : '—'}</td>
+                <td className="mono">{ago(e.first)} ago</td>
+                <td className="mono">{ago(e.last)} ago</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="insight-note">Local database in Documents\IONITY\device-db.json. “Closest” is the minimum RSSI-derived range ever observed. For sub-metre indoor positioning (Google-style), fixed BLE anchor beacons at known coordinates are needed — the DB captures the per-device distances that feed that; multi-anchor trilateration is the next milestone.</p>
+    </section>
+  );
+}
+
+/* SVG area-of-effect radar: concentric distance rings, devices placed by
+ * distance (from RSSI) at a stable pseudo-angle (hash of address). */
+function AoeRadar({ devices }) {
+  const size = 420, cx = size / 2, cy = size / 2, R = size / 2 - 20;
+  const rings = [1, 2, 5, 10, 20];               /* metres */
+  const rMax = 20;
+  const radius = (m) => R * Math.min(1, Math.log10(1 + Math.min(m, rMax)) / Math.log10(1 + rMax));
+  const angle = (addr) => {
+    let h = 0; for (const c of String(addr)) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return (h * Math.PI) / 180;
+  };
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="radar" role="img" aria-label="Area radar">
+      {rings.map((m, i) => (
+        <g key={i}>
+          <circle cx={cx} cy={cy} r={radius(m)} fill="none" stroke="#1e3a5c" />
+          <text x={cx + 3} y={cy - radius(m) + 12} fill="#4a6a8c" className="rlabel">{m}m</text>
+        </g>
+      ))}
+      <line x1={cx} y1={20} x2={cx} y2={size - 20} stroke="#152c46" />
+      <line x1={20} y1={cy} x2={size - 20} y2={cy} stroke="#152c46" />
+      <circle cx={cx} cy={cy} r={6} fill="#00c6ff" />
+      <text x={cx} y={cy + 20} fill="#00c6ff" textAnchor="middle" className="rlabel">PicoLink</text>
+      {devices.slice(0, 40).map((d, i) => {
+        const dist = d.dist_m != null ? d.dist_m : 15;
+        const a = angle(d.addr || i);
+        const rr = radius(dist);
+        const x = cx + rr * Math.cos(a), y = cy + rr * Math.sin(a);
+        const col = d.kind === 'ble' ? '#2fd67b' : '#ffb454';
+        const known = d.cat && ['findmy', 'tile', 'smarttag', 'ibeacon'].includes(d.cat);
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r={known ? 6 : 4} fill={col} opacity="0.9" />
+            {i < 12 && <text x={x + 7} y={y + 3} fill="#7d97b4" className="rlabel">{(d.name || d.cat || d.addr || '').slice(0, 10)}</text>}
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 

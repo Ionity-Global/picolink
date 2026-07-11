@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('picolink', {
   relaunch:    ()     => ipcRenderer.invoke('relaunch'),
   saveBriefing:(p)    => ipcRenderer.invoke('save-briefing', p),
   showItem:    (p)    => ipcRenderer.invoke('open-path', p),
+  geolocate:   (aps)  => ipcRenderer.invoke('geolocate', aps),
+  saveSurvey:  (sv)   => ipcRenderer.invoke('save-survey', sv),
+  dbRecord:    (p)    => ipcRenderer.invoke('db-record', p),
+  dbSummary:   ()     => ipcRenderer.invoke('db-summary'),
+  dbClear:     ()     => ipcRenderer.invoke('db-clear'),
+  dbExport:    ()     => ipcRenderer.invoke('db-export'),
+  telemetryLog:(st)   => ipcRenderer.invoke('telemetry-log', st),
 
   platform: process.platform
 });

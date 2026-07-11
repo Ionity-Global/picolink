@@ -15,6 +15,7 @@
 #include "control.h"
 #include "wifi_scan.h"
 #include "btmon.h"
+#include "gps.h"
 
 static char line[128];
 static uint32_t line_len;
@@ -27,7 +28,7 @@ static void reply(const char *s) {
 }
 
 static void send_status(void) {
-    char buf[384];
+    char buf[480];
     const char *r = (g_pl.radio == RADIO_ON) ? "on" :
                     (g_pl.radio == RADIO_OFF) ? "off" : "detached";
     wifi_net_t best;
@@ -36,12 +37,16 @@ static void send_status(void) {
     int link = wifi_link_status();
     const char *linkstr = link == 3 ? "up" : link == 2 ? "noip" : link == 1 ? "join" :
                           link == -1 ? "fail" : link == -2 ? "nonet" : link == -3 ? "badauth" : "down";
+    char gps[80] = "\"gps_fix\":false";
+    if (gps_has_fix())
+        snprintf(gps, sizeof(gps), "\"gps_fix\":true,\"lat\":%.6f,\"lng\":%.6f,\"sats\":%d",
+                 gps_lat(), gps_lon(), gps_sats());
     snprintf(buf, sizeof(buf),
         "STAT {\"radio\":\"%s\",\"usb\":%s,\"tx_pkts\":%lu,\"rx_pkts\":%lu,"
         "\"tx_bytes\":%lu,\"rx_bytes\":%lu,\"drops\":%lu,\"uptime_ms\":%lu,"
         "\"temp_c\":%.1f,\"wifi_nets\":%d,\"bt\":%d,\"ble\":%d,"
         "\"near\":%d,\"moving\":%d,\"wifi_link\":\"%s\",\"wifi_join\":\"%s\","
-        "\"wifi_best\":\"%s\",\"wifi_best_rssi\":%d}",
+        "\"wifi_best\":\"%s\",\"wifi_best_rssi\":%d,%s}",
         r, g_pl.usb_mounted ? "true" : "false",
         (unsigned long)g_pl.tx_pkts, (unsigned long)g_pl.rx_pkts,
         (unsigned long)g_pl.tx_bytes, (unsigned long)g_pl.rx_bytes,
@@ -51,7 +56,7 @@ static void send_status(void) {
         wifi_scan_count(), btmon_count(BT_CLASSIC), btmon_count(BT_LE),
         pr.near, pr.moving, linkstr, wifi_join_ssid(),
         has_best ? best.ssid : "",
-        has_best ? best.rssi : 0);
+        has_best ? best.rssi : 0, gps);
     reply(buf);
 }
 
@@ -150,9 +155,21 @@ static void wifi_join_cmd(char *args) {
     reply("OK WIFI JOIN");
 }
 
+static void send_gps(void) {
+    char buf[128];
+    if (gps_has_fix())
+        snprintf(buf, sizeof(buf), "GPS {\"fix\":true,\"lat\":%.6f,\"lng\":%.6f,\"sats\":%d}",
+                 gps_lat(), gps_lon(), gps_sats());
+    else
+        snprintf(buf, sizeof(buf), "GPS {\"fix\":false,\"present\":%s}",
+                 gps_present() ? "true" : "false");
+    reply(buf);
+}
+
 static void handle_line(char *cmd) {
     if      (kw(cmd, "HELLO"))      send_id();
     else if (kw(cmd, "STATUS"))     send_status();
+    else if (kw(cmd, "GPS"))        send_gps();
     else if (kw(cmd, "BTLIST") || !strcasecmp(cmd, "BT")) send_devs(BT_CLASSIC, "BTLIST");
     else if (kw(cmd, "BLELIST") || !strcasecmp(cmd, "BLE")) send_devs(BT_LE, "BLELIST");
     else if (kw(cmd, "PING"))       reply("PONG");

@@ -202,6 +202,114 @@ ipcMain.handle('save-briefing', async (_e, payload) => {
 });
 ipcMain.handle('open-path', (_e, p) => shell.showItemInFolder(p));
 
+/* ---- Wi-Fi geolocation ----
+ * Estimates the dongle's position from the surrounding APs' BSSIDs using
+ * Google's Geolocation API (standard positioning, same as laptops). Needs a
+ * key in GOOGLE_GEOLOCATION_KEY (or passed in). Online-only; GPS is the
+ * offline path. Nothing is transmitted except the AP MAC/RSSI list you already
+ * observe. */
+ipcMain.handle('geolocate', async (_e, aps) => {
+  const key = process.env.GOOGLE_GEOLOCATION_KEY;
+  if (!key) return { ok: false, need: 'key', msg: 'Set GOOGLE_GEOLOCATION_KEY to enable Wi-Fi positioning (or use an attached GPS).' };
+  const wifiAccessPoints = (aps || [])
+    .filter(a => a.bssid && /^[0-9a-f:]{17}$/i.test(a.bssid))
+    .map(a => ({ macAddress: a.bssid, signalStrength: a.rssi, channel: a.ch }));
+  if (wifiAccessPoints.length < 2) return { ok: false, msg: 'Need at least 2 APs with BSSIDs (flash firmware v1.4.0+ so BSSIDs are reported).' };
+  try {
+    const res = await fetch('https://www.googleapis.com/geolocation/v1/geolocate?key=' + key, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ considerIp: false, wifiAccessPoints })
+    });
+    const j = await res.json();
+    if (j?.location) return { ok: true, lat: j.location.lat, lng: j.location.lng, accuracy: j.accuracy, aps: wifiAccessPoints.length };
+    return { ok: false, msg: j?.error?.message || 'no fix' };
+  } catch (e) { return { ok: false, msg: e.message }; }
+});
+
+/* ---- site-survey export (wardriving-style CSV + JSON) ---- */
+ipcMain.handle('save-survey', async (_e, survey) => {
+  const dir = path.join(app.getPath('documents'), 'IONITY', 'surveys');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = path.join(dir, `picolink-survey-${stamp}`);
+  fs.writeFileSync(base + '.json', JSON.stringify(survey, null, 2));
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['kind', 'id', 'name', 'security/sig', 'rssi', 'dist_m', 'channel', 'lat', 'lng', 'seen']];
+  (survey.wifi || []).forEach(n => rows.push(['wifi', n.bssid || '', n.ssid || '', n.sec || '', n.rssi, '', n.ch || '', survey.lat ?? '', survey.lng ?? '', survey.at]));
+  (survey.classic || []).forEach(d => rows.push(['classic', d.addr, d.name || '', d.cat || d.cod || '', d.rssi, d.dist_m ?? '', '', survey.lat ?? '', survey.lng ?? '', survey.at]));
+  (survey.ble || []).forEach(d => rows.push(['ble', d.addr, d.name || '', d.cat || d.atype || '', d.rssi, d.dist_m ?? '', '', survey.lat ?? '', survey.lng ?? '', survey.at]));
+  fs.writeFileSync(base + '.csv', rows.map(r => r.map(esc).join(',')).join('\r\n'));
+  return { ok: true, csvPath: base + '.csv', jsonPath: base + '.json',
+           counts: { wifi: (survey.wifi || []).length, classic: (survey.classic || []).length, ble: (survey.ble || []).length } };
+});
+
+/* ---- persistent device database (maps every device seen, with distance) ----
+ * A local, append-merge store in Documents\IONITY\device-db.json: one record
+ * per address with first/last seen, sighting count, best RSSI, closest range,
+ * category, and last known location. Fed from the live lists each poll. */
+const dbPath = () => {
+  const dir = path.join(app.getPath('documents'), 'IONITY');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, 'device-db.json');
+};
+let deviceDb = {};
+try { deviceDb = JSON.parse(fs.readFileSync(dbPath(), 'utf8')); } catch { deviceDb = {}; }
+let dbDirty = false, dbTimer = null;
+const dbSave = () => {
+  dbDirty = true;
+  if (dbTimer) return;
+  dbTimer = setTimeout(() => { dbTimer = null; if (!dbDirty) return; dbDirty = false;
+    try { fs.writeFileSync(dbPath(), JSON.stringify(deviceDb)); } catch {} }, 4000);
+};
+
+ipcMain.handle('db-record', (_e, { devices, wifi, location, ts }) => {
+  const now = ts || Date.now();
+  const upd = (key, rec) => {
+    const e = deviceDb[key] || { key, first: now, count: 0, bestRssi: -127, minDist: null };
+    e.last = now; e.count++;
+    e.kind = rec.kind; e.name = rec.name || e.name; e.cat = rec.cat || e.cat;
+    if (rec.rssi != null && rec.rssi > e.bestRssi) e.bestRssi = rec.rssi;
+    e.lastRssi = rec.rssi;
+    if (rec.dist_m != null && (e.minDist == null || rec.dist_m < e.minDist)) e.minDist = rec.dist_m;
+    e.lastDist = rec.dist_m ?? e.lastDist;
+    if (rec.ssid) e.ssid = rec.ssid;
+    if (rec.sec) e.sec = rec.sec;
+    if (location?.lat != null) { e.lat = location.lat; e.lng = location.lng; }
+    deviceDb[key] = e;
+  };
+  (devices || []).forEach(d => d.addr && upd(d.kind + ':' + d.addr, d));
+  (wifi || []).forEach(n => n.bssid && upd('wifi:' + n.bssid, { ...n, kind: 'wifi' }));
+  dbSave();
+  return { ok: true, size: Object.keys(deviceDb).length };
+});
+ipcMain.handle('db-summary', () => ({ size: Object.keys(deviceDb).length, records: Object.values(deviceDb) }));
+ipcMain.handle('db-clear', () => { deviceDb = {}; try { fs.writeFileSync(dbPath(), '{}'); } catch {} return { ok: true }; });
+ipcMain.handle('db-export', () => {
+  const dir = path.join(app.getPath('documents'), 'IONITY', 'surveys');
+  fs.mkdirSync(dir, { recursive: true });
+  const p = path.join(dir, `device-db-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`);
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['key', 'kind', 'name/ssid', 'cat/sec', 'count', 'bestRssi', 'minDist_m', 'lastDist_m', 'first', 'last', 'lat', 'lng']];
+  Object.values(deviceDb).forEach(e => rows.push([e.key, e.kind, e.name || e.ssid || '', e.cat || e.sec || '',
+    e.count, e.bestRssi, e.minDist ?? '', e.lastDist ?? '', new Date(e.first).toISOString(), new Date(e.last).toISOString(), e.lat ?? '', e.lng ?? '']));
+  fs.writeFileSync(p, rows.map(r => r.map(esc).join(',')).join('\r\n'));
+  return { ok: true, path: p, size: Object.keys(deviceDb).length };
+});
+
+/* rolling telemetry log (STAT timeseries) */
+ipcMain.handle('telemetry-log', (_e, stat) => {
+  try {
+    const dir = path.join(app.getPath('documents'), 'IONITY', 'telemetry');
+    fs.mkdirSync(dir, { recursive: true });
+    const p = path.join(dir, `telemetry-${new Date().toISOString().slice(0, 10)}.csv`);
+    if (!fs.existsSync(p)) fs.writeFileSync(p, 'time,radio,temp_c,wifi_nets,bt,ble,near,moving,drops,wifi_link\r\n');
+    const r = [new Date().toISOString(), stat.radio, stat.temp_c, stat.wifi_nets, stat.bt, stat.ble,
+               stat.near ?? '', stat.moving ?? '', stat.drops, stat.wifi_link ?? ''].join(',');
+    fs.appendFile(p, r + '\r\n', () => {});
+  } catch {}
+  return { ok: true };
+});
+
 app.whenReady().then(() => {
   createWindow();
   buildTray();

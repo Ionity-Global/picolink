@@ -18,6 +18,7 @@
 #include "logbuf.h"
 #include "control.h"
 #include "wifi_scan.h"
+#include "gps.h"
 #include "btmon.h"
 
 picolink_state_t g_pl;
@@ -107,6 +108,7 @@ int main(void) {
     adc_init();
     adc_set_temp_sensor_enabled(true);
 
+    gps_init();
     buttons_init();
     btmon_init();
     ui_init();
@@ -135,6 +137,7 @@ int main(void) {
         control_task();
         log_pump_cdc();
         wifi_scan_task();
+        gps_task();
         btmon_expire();
 
         /* drain intruder alerts: notify the console + flash the OLED */

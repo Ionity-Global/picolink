@@ -356,3 +356,11 @@ button.tiny { padding: 3px 8px; font-size: .68rem; }
 .vrow.ok .vk { color: var(--warn); }
 .vrow .vn { flex: 0 0 auto; color: var(--muted); }
 .vrow .vv { color: var(--text); }
+
+/* ═══════════════ v1.7.0 recon / radar / geolocation ═══════════════ */
+.radar { width: 100%; max-width: 440px; height: auto; display: block; margin: 8px auto; }
+.radar .rlabel { font: 10px "Cascadia Code", Consolas, monospace; }
+.recon-loc { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: .8rem; }
+.recon-loc .loc-ok { color: var(--ok); }
+.recon-loc .loc-ok a { color: var(--cyan); cursor: pointer; }
+.recon-loc .loc-ok .ti { vertical-align: -2px; margin-right: 3px; }

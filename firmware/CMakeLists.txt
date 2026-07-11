@@ -25,6 +25,7 @@ add_executable(ionity_picolink
     src/logbuf.c
     src/control.c
     src/msc_disk.c
+    src/gps.c
 )
 
 target_include_directories(ionity_picolink PRIVATE src)
@@ -41,12 +42,13 @@ target_link_libraries(ionity_picolink
     hardware_spi
     hardware_gpio
     hardware_adc
+    hardware_uart
     pico_cyw43_arch_none
     tinyusb_device
     tinyusb_board
 )
 
 pico_set_program_name(ionity_picolink "IONITY PicoLink")
-pico_set_program_version(ionity_picolink "1.3.0")
+pico_set_program_version(ionity_picolink "1.5.0")
 
 pico_add_extra_outputs(ionity_picolink)

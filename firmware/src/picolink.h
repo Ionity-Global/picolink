@@ -8,15 +8,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PICOLINK_VERSION      "1.4.0"
+#define PICOLINK_VERSION      "1.5.0"
 #define PICOLINK_PRODUCT      "IONITY PicoLink"
 #define PICOLINK_DISPLAY      "Waveshare Pico OLED 1.3"
 #define PICOLINK_URL          "https://github.com/Ionity-Global/picolink"
 
 /* ---- Waveshare Pico-OLED-1.3 (SH1107, SPI1) ---- */
 #define OLED_SPI_PORT    spi1
-#define OLED_PIN_CLK     10   /* SCK  */
-#define OLED_PIN_DIN     11   /* MOSI */
+#define OLED_PIN_CLK     10
+#define OLED_PIN_DIN     11
 #define OLED_PIN_CS       9
 #define OLED_PIN_DC       8
 #define OLED_PIN_RST     12
@@ -24,14 +24,19 @@
 #define OLED_HEIGHT      64
 
 /* ---- Keys on the Waveshare board ---- */
-#define PIN_KEY0         15   /* radio toggle / long-press = USB detach   */
-#define PIN_KEY1         17   /* cycle screens                            */
+#define PIN_KEY0         15
+#define PIN_KEY1         17
 
-/* ---- Radio / bridge state ---- */
+/* ---- Optional GPS module (UART0, NMEA @ 9600) — free pins GP0/GP1 ---- */
+#define GPS_UART         uart0
+#define GPS_PIN_TX        0
+#define GPS_PIN_RX        1
+#define GPS_BAUD       9600
+
 typedef enum {
-    RADIO_OFF = 0,       /* bridge gated, HCI reset issued               */
-    RADIO_ON  = 1,       /* bridging HCI <-> USB                         */
-    RADIO_DETACHED = 2,  /* USB soft-detached (host sees unplug)         */
+    RADIO_OFF = 0,
+    RADIO_ON  = 1,
+    RADIO_DETACHED = 2,
 } radio_state_t;
 
 typedef struct {
@@ -51,6 +56,6 @@ extern picolink_state_t g_pl;
 
 void  picolink_request_radio(bool on);
 void  picolink_request_detach_toggle(void);
-float picolink_core_temp_c(void);           /* RP2040 on-die sensor */
+float picolink_core_temp_c(void);
 
 #endif
