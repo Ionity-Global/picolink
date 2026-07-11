@@ -2,13 +2,15 @@
  * IONITY PicoLink Console — Electron main process
  * © 2026 Ionity Global (Pty) Ltd — MIT (code)
  *
- * The renderer talks to the dongle via Web Serial (no native modules).
- * Main auto-grants the serial port for the PicoLink (VID 0x2E8A / PID 0x986A),
- * provides the tray, and appends logs to a rolling file in userData.
+ * Renderer talks to the dongle over Web Serial (CDC console) and to nearby
+ * BLE peripherals over Web Bluetooth — both routed by the OS through the
+ * PicoLink radio. Main wires device pickers, the tray, log persistence, and
+ * a one-click self-updater (git pull + relaunch) for online machines.
  */
 const { app, BrowserWindow, Tray, Menu, ipcMain, shell, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { execFile } = require('node:child_process');
 
 const PICOLINK_VID = 0x2E8A;   // Raspberry Pi
 const PICOLINK_PID = 0x986A;   // IONITY PicoLink
@@ -16,24 +18,29 @@ const PICOLINK_PID = 0x986A;   // IONITY PicoLink
 let win = null;
 let tray = null;
 let radioOn = true;
+let btCallback = null;         // pending Web Bluetooth device-picker callback
+
+const appVersion = () => {
+  try { return require('../package.json').version; } catch { return '?'; }
+};
 
 const logDir = () => {
   const d = path.join(app.getPath('userData'), 'logs');
   fs.mkdirSync(d, { recursive: true });
   return d;
 };
+const logFilePath = () =>
+  path.join(logDir(), `picolink-${new Date().toISOString().slice(0, 10)}.log`);
 
-function logFilePath() {
-  const day = new Date().toISOString().slice(0, 10);
-  return path.join(logDir(), `picolink-${day}.log`);
-}
+/* repo root = two levels up from desktop/electron (…/picolink) */
+const repoRoot = () => path.resolve(__dirname, '..', '..');
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1040,
-    height: 700,
-    minWidth: 760,
-    minHeight: 520,
+    width: 1080,
+    height: 720,
+    minWidth: 820,
+    minHeight: 560,
     backgroundColor: '#0d1b2a',
     autoHideMenuBar: true,
     title: 'IONITY PicoLink Console',
@@ -47,19 +54,29 @@ function createWindow() {
 
   const ses = win.webContents.session;
 
-  /* Auto-select the PicoLink CDC port — no chooser dialog needed. */
-  win.webContents.session.on('select-serial-port', (event, portList, webContents, callback) => {
+  /* Auto-select the PicoLink CDC port — no chooser dialog. */
+  ses.on('select-serial-port', (event, portList, wc, callback) => {
     event.preventDefault();
     const pick =
-      portList.find(p => parseInt(p.vendorId, 16) === PICOLINK_VID || Number(p.vendorId) === PICOLINK_VID) ||
-      portList[0];
+      portList.find(p => parseInt(p.vendorId, 16) === PICOLINK_VID) || portList[0];
     callback(pick ? pick.portId : '');
   });
 
+  /* Web Bluetooth: stream the growing scan list to the renderer; the
+   * renderer picks a device id (or cancels) and we complete the callback. */
+  win.webContents.on('select-bluetooth-device', (event, devices, callback) => {
+    event.preventDefault();
+    btCallback = callback;
+    win.webContents.send('ble-scan-list', devices.map(d => ({
+      id: d.deviceId,
+      name: d.deviceName || '(unknown)'
+    })));
+  });
+
   ses.setPermissionCheckHandler((wc, permission) =>
-    ['serial'].includes(permission) ? true : false);
+    ['serial', 'bluetooth'].includes(permission));
   ses.setDevicePermissionHandler(details =>
-    details.deviceType === 'serial');
+    details.deviceType === 'serial' || details.deviceType === 'bluetooth');
 
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 
@@ -69,17 +86,13 @@ function createWindow() {
   });
 
   win.on('close', (e) => {
-    if (!app.isQuiting && tray) {
-      e.preventDefault();
-      win.hide();               /* keep running in tray */
-    }
+    if (!app.isQuiting && tray) { e.preventDefault(); win.hide(); }
   });
 }
 
 function trayIcon() {
-  const p = path.join(__dirname, '..', 'assets', 'icon.png');
   try {
-    const img = nativeImage.createFromPath(p);
+    const img = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.png'));
     if (!img.isEmpty()) return img.resize({ width: 16, height: 16 });
   } catch (_) {}
   return nativeImage.createEmpty();
@@ -90,7 +103,7 @@ function buildTray() {
   const refresh = () => {
     tray.setToolTip('IONITY PicoLink');
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'IONITY PicoLink Console', enabled: false },
+      { label: `IONITY PicoLink Console v${appVersion()}`, enabled: false },
       { type: 'separator' },
       { label: 'Open console', click: () => { win.show(); win.focus(); } },
       {
@@ -106,19 +119,53 @@ function buildTray() {
   ipcMain.on('radio-state', (_e, on) => { radioOn = !!on; refresh(); });
 }
 
-/* Renderer streams every log line here; we append to the day file. */
-ipcMain.on('append-log', (_e, line) => {
-  fs.appendFile(logFilePath(), line + '\n', () => {});
+/* ---- Web Bluetooth picker callbacks from renderer ---- */
+ipcMain.on('ble-select', (_e, deviceId) => {
+  if (btCallback) { btCallback(deviceId); btCallback = null; }
 });
+ipcMain.on('ble-cancel', () => {
+  if (btCallback) { btCallback(''); btCallback = null; }
+});
+
+/* ---- logs ---- */
+ipcMain.on('append-log', (_e, line) => fs.appendFile(logFilePath(), line + '\n', () => {}));
 ipcMain.handle('get-log-path', () => logFilePath());
 ipcMain.handle('open-log-folder', () => shell.openPath(logDir()));
+ipcMain.handle('app-version', () => appVersion());
+ipcMain.handle('open-external', (_e, url) => shell.openExternal(url));
+
+/* ---- self-updater: git pull + npm install, then caller may relaunch ---- */
+function run(cmd, args, cwd) {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { cwd, windowsHide: true, timeout: 120000, shell: process.platform === 'win32' },
+      (err, stdout, stderr) => resolve({ ok: !err, out: (stdout || '') + (stderr || '') }));
+  });
+}
+ipcMain.handle('check-update', async () => {
+  const root = repoRoot();
+  if (!fs.existsSync(path.join(root, '.git'))) {
+    return { ok: false, out: 'Not a git checkout — reinstall from the IONITY drive to enable updates.' };
+  }
+  const fetch = await run('git', ['-C', root, 'fetch', '--quiet']);
+  const local = await run('git', ['-C', root, 'rev-parse', 'HEAD']);
+  const remote = await run('git', ['-C', root, 'rev-parse', '@{u}']);
+  const behind = local.out.trim() !== remote.out.trim();
+  return { ok: fetch.ok, behind, local: local.out.trim().slice(0, 7), remote: remote.out.trim().slice(0, 7) };
+});
+ipcMain.handle('apply-update', async () => {
+  const root = repoRoot();
+  const pull = await run('git', ['-C', root, 'pull', '--ff-only']);
+  if (!pull.ok) return pull;
+  const install = await run('npm', ['install', '--no-audit', '--no-fund'], path.join(root, 'desktop'));
+  return { ok: install.ok, out: pull.out + '\n' + install.out };
+});
+ipcMain.handle('relaunch', () => { app.relaunch(); app.exit(0); });
 
 app.whenReady().then(() => {
   createWindow();
   buildTray();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    else win.show();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(); else win.show();
   });
 });
 

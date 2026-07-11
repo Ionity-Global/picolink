@@ -54,7 +54,7 @@ header {
 .link-pill.on i { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
 @keyframes pulse { 50% { opacity: .45; } }
 
-/* ---------- layout ---------- */
+/* ---------- layout (legacy grid, overridden below for tabbed UI) ---------- */
 main {
   flex: 1; display: grid; grid-template-columns: 340px 1fr;
   gap: 16px; padding: 16px 20px; min-height: 0;
@@ -164,3 +164,106 @@ button.ghost { background: transparent; padding: 5px 10px; font-size: .72rem; }
   padding: 8px 20px 12px; font-size: .68rem; color: var(--muted);
   border-top: 1px solid var(--line); letter-spacing: .06em;
 }
+
+/* ═══════════════ tabbed UI (v1.3.0) ═══════════════ */
+.head-right { display: flex; align-items: center; gap: 12px; }
+.upd { display: flex; align-items: center; gap: 8px; font-size: .74rem; }
+.upd .ver { color: var(--cyan); font-family: "Cascadia Code", Consolas, monospace; }
+
+.update-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #10314a; border-bottom: 1px solid var(--cyan-dim);
+  padding: 8px 20px; font-size: .82rem; color: var(--text);
+}
+.update-bar .x { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 0 6px; }
+
+/* tabs */
+.tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--line); }
+.tabs button {
+  background: transparent; border: 1px solid transparent; border-bottom: none;
+  color: var(--muted); padding: 9px 16px; border-radius: 9px 9px 0 0;
+  font-size: .82rem; letter-spacing: .04em; cursor: pointer; position: relative;
+  display: flex; align-items: center; gap: 7px;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button.active {
+  color: var(--cyan); border-color: var(--line); border-bottom: 1px solid var(--bg);
+  background: linear-gradient(180deg, var(--panel), var(--bg2)); margin-bottom: -1px;
+}
+.tabs .badge {
+  background: var(--cyan-dim); color: #eaf7ff; font-size: .62rem;
+  border-radius: 999px; padding: 1px 7px; min-width: 18px; text-align: center;
+}
+
+/* layout override: tabbed content is a normal scroll area */
+main { display: block; overflow-y: auto; padding: 16px 20px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 12px; }
+.panel-head h2 { margin: 0; }
+.row-btns { display: flex; gap: 8px; }
+.hint { color: var(--muted); font-size: .82rem; line-height: 1.55; margin: 6px 0 0; }
+.warn { color: var(--warn); font-size: .82rem; margin: 8px 0 0; }
+.mono { font-family: "Cascadia Code", "Fira Code", Consolas, monospace; }
+.muted { color: var(--muted); }
+
+/* AEDI insight */
+.insight h2 { display: flex; align-items: center; gap: 8px; }
+.insight h2 .ti { color: var(--cyan); font-size: 18px; }
+.insight-head { font-size: 1.02rem; margin: 10px 0 12px; color: var(--text); }
+.insight-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
+.insight-list li { display: flex; gap: 9px; align-items: flex-start; font-size: .84rem; line-height: 1.45; }
+.insight-list li .ti { margin-top: 1px; flex: 0 0 auto; }
+.insight-list .sev-ok .ti { color: var(--ok); }
+.insight-list .sev-warn .ti { color: var(--warn); }
+.insight-list .sev-info .ti { color: var(--cyan); }
+.insight-foot { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: .74rem; }
+.insight-foot .mono { color: var(--muted); white-space: nowrap; }
+.score-bar { flex: 1; height: 7px; background: #0f2036; border-radius: 999px; overflow: hidden; }
+.score-bar > div { height: 100%; border-radius: 999px; transition: width .5s; }
+.score-bar .s-clear { background: var(--ok); }
+.score-bar .s-moderate { background: var(--warn); }
+.score-bar .s-congested { background: var(--err); }
+.insight-note { color: var(--muted); font-size: .68rem; margin: 12px 0 0; line-height: 1.5; }
+
+/* tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
+.tbl th { text-align: left; color: var(--muted); font-weight: 500; font-size: .68rem;
+  text-transform: uppercase; letter-spacing: .08em; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.tbl td { padding: 7px 8px; border-bottom: 1px solid #172d47; }
+.tbl tr:hover td { background: #0f2036; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; }
+.bars i { width: 4px; background: #33506e; border-radius: 1px; }
+.bars i.f { background: var(--cyan); }
+
+/* BLE connected card */
+.ble-conn { margin-top: 12px; }
+.ble-conn-top { display: flex; align-items: center; gap: 12px; }
+.ble-conn-top .dot { width: 12px; height: 12px; border-radius: 50%; background: #59677a; }
+.ble-conn-top .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.ble-conn-top b { display: block; }
+.ble-conn-top .mono { font-size: .72rem; }
+.ble-conn-top button { margin-left: auto; }
+.kv { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0; }
+.kv span { font-size: .82rem; }
+.kv label { display: block; color: var(--muted); font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; }
+.svc-list { list-style: none; padding: 10px; margin: 0; background: #0f2036; border: 1px solid var(--line);
+  border-radius: 9px; display: flex; flex-direction: column; gap: 5px; font-size: .74rem; }
+
+/* BLE picker modal */
+.modal-wrap { min-height: 100%; position: absolute; inset: 0; background: rgba(6,14,24,.72);
+  display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal { background: var(--panel); border: 1px solid var(--cyan-dim); border-radius: 14px;
+  padding: 20px; width: 380px; max-width: 90%; }
+.modal h3 { margin: 0 0 12px; display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
+.pick { display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: 10px 12px; background: #0f2036; border: 1px solid var(--line); border-radius: 9px;
+  color: var(--text); cursor: pointer; font-size: .84rem; }
+.pick:hover { border-color: var(--cyan); color: var(--cyan); }
+.pick-list .empty { color: var(--muted); text-align: center; padding: 20px; font-size: .82rem; }
+
+.app-foot a { color: var(--cyan-dim); cursor: pointer; text-decoration: none; }
+.app-foot a:hover { color: var(--cyan); }
