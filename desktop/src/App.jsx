@@ -36,6 +36,16 @@ export default function App() {
   const sec = analyzeSecurity(s, tw.trusted);
 
   useEffect(() => { window.picolink?.version().then(setAppVer); }, []);
+
+  /* auto-update requester: on launch, quietly ask GitHub if we're behind and
+   * surface the update bar if a newer commit exists (online only). */
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try { const r = await window.picolink?.checkUpdate();
+        if (r && r.behind) setUpdate({ ...r, auto: true }); } catch {}
+    }, 4000);
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => { window.picolink?.radioState(s.stat?.radio === 'on'); }, [s.stat?.radio]);
   useEffect(() => { window.picolink?.onTrayCmd((cmd) => s.send(cmd)); }, [s]);
 
