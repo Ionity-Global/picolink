@@ -6,5 +6,6 @@ void ui_init(void);          /* splash                       */
 void ui_next_screen(void);
 void ui_toggle_display(void);
 void ui_task(void);          /* re-render if dirty / periodic */
+void ui_flash_alert(const char *who);  /* intruder banner ~3s */
 
 #endif

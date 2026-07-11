@@ -136,6 +136,13 @@ int main(void) {
         log_pump_cdc();
         wifi_scan_task();
         btmon_expire();
+
+        /* drain intruder alerts: notify the console + flash the OLED */
+        bt_dev_t alert;
+        while (btmon_take_alert(&alert)) {
+            control_emit_alert(&alert);
+            ui_flash_alert(alert.name[0] ? alert.name : "new device");
+        }
         handle_buttons();
         apply_requests();
         led_task();

@@ -27,15 +27,20 @@ static void reply(const char *s) {
 }
 
 static void send_status(void) {
-    char buf[288];
+    char buf[384];
     const char *r = (g_pl.radio == RADIO_ON) ? "on" :
                     (g_pl.radio == RADIO_OFF) ? "off" : "detached";
     wifi_net_t best;
     bool has_best = wifi_scan_get(0, &best);
+    btmon_presence_t pr = btmon_presence();
+    int link = wifi_link_status();
+    const char *linkstr = link == 3 ? "up" : link == 2 ? "noip" : link == 1 ? "join" :
+                          link == -1 ? "fail" : link == -2 ? "nonet" : link == -3 ? "badauth" : "down";
     snprintf(buf, sizeof(buf),
         "STAT {\"radio\":\"%s\",\"usb\":%s,\"tx_pkts\":%lu,\"rx_pkts\":%lu,"
         "\"tx_bytes\":%lu,\"rx_bytes\":%lu,\"drops\":%lu,\"uptime_ms\":%lu,"
         "\"temp_c\":%.1f,\"wifi_nets\":%d,\"bt\":%d,\"ble\":%d,"
+        "\"near\":%d,\"moving\":%d,\"wifi_link\":\"%s\",\"wifi_join\":\"%s\","
         "\"wifi_best\":\"%s\",\"wifi_best_rssi\":%d}",
         r, g_pl.usb_mounted ? "true" : "false",
         (unsigned long)g_pl.tx_pkts, (unsigned long)g_pl.rx_pkts,
@@ -44,6 +49,7 @@ static void send_status(void) {
         (unsigned long)to_ms_since_boot(get_absolute_time()),
         (double)picolink_core_temp_c(),
         wifi_scan_count(), btmon_count(BT_CLASSIC), btmon_count(BT_LE),
+        pr.near, pr.moving, linkstr, wifi_join_ssid(),
         has_best ? best.ssid : "",
         has_best ? best.rssi : 0);
     reply(buf);
@@ -104,24 +110,59 @@ static void send_id(void) {
     reply(buf);
 }
 
-static void handle_line(char *cmd) {
-    for (char *p = cmd; *p; p++) *p = (char)toupper((unsigned char)*p);
+/* case-insensitive keyword compare on the first token(s) */
+static bool kw(const char *cmd, const char *k) {
+    while (*k) { if (toupper((unsigned char)*cmd++) != *k++) return false; }
+    return *cmd == 0 || *cmd == ' ';
+}
 
-    if (!strcmp(cmd, "HELLO"))        { send_id(); }
-    else if (!strcmp(cmd, "STATUS"))  { send_status(); }
-    else if (!strcmp(cmd, "WIFI"))    { send_wifi(); }
-    else if (!strcmp(cmd, "BT") || !strcmp(cmd, "BTLIST"))   { send_devs(BT_CLASSIC, "BTLIST"); }
-    else if (!strcmp(cmd, "BLE") || !strcmp(cmd, "BLELIST")) { send_devs(BT_LE, "BLELIST"); }
-    else if (!strcmp(cmd, "PING"))    { reply("PONG"); }
-    else if (!strcmp(cmd, "BT ON"))   { picolink_request_radio(true);  reply("OK BT ON"); }
-    else if (!strcmp(cmd, "BT OFF"))  { picolink_request_radio(false); reply("OK BT OFF"); }
-    else if (!strcmp(cmd, "DETACH"))  { reply("OK DETACH"); picolink_request_detach_toggle(); }
-    else if (!strcmp(cmd, "BOOTLOADER")) {
-        reply("OK BOOTLOADER");
-        sleep_ms(100);
-        reset_usb_boot(0, 0);
+/* WIFI JOIN "<ssid>" "<pass>"  — quotes optional; preserves case */
+static void wifi_join_cmd(char *args) {
+    char ssid[33] = {0}, pass[65] = {0};
+    /* accept  JOIN "ssid" "pass"  or  JOIN ssid pass */
+    char *p = args;
+    while (*p == ' ') p++;
+    for (int f = 0; f < 2 && *p; f++) {
+        char *dst = f == 0 ? ssid : pass;
+        int cap = f == 0 ? 32 : 64, n = 0;
+        if (*p == '"') { p++; while (*p && *p != '"' && n < cap) dst[n++] = *p++; if (*p == '"') p++; }
+        else { while (*p && *p != ' ' && n < cap) dst[n++] = *p++; }
+        dst[n] = 0;
+        while (*p == ' ') p++;
     }
-    else if (cmd[0])                  { reply("ERR unknown command"); }
+    if (!ssid[0]) { reply("ERR WIFI JOIN needs an SSID"); return; }
+    wifi_join(ssid, pass);
+    reply("OK WIFI JOIN");
+}
+
+static void handle_line(char *cmd) {
+    if      (kw(cmd, "HELLO"))      send_id();
+    else if (kw(cmd, "STATUS"))     send_status();
+    else if (kw(cmd, "BTLIST") || !strcasecmp(cmd, "BT")) send_devs(BT_CLASSIC, "BTLIST");
+    else if (kw(cmd, "BLELIST") || !strcasecmp(cmd, "BLE")) send_devs(BT_LE, "BLELIST");
+    else if (kw(cmd, "PING"))       reply("PONG");
+    else if (kw(cmd, "WIFI JOIN"))  wifi_join_cmd(cmd + 9);
+    else if (kw(cmd, "WIFI LEAVE")) { wifi_leave(); reply("OK WIFI LEAVE"); }
+    else if (kw(cmd, "WIFI"))       send_wifi();        /* bare WIFI = scan list */
+    else if (kw(cmd, "BT ON"))      { picolink_request_radio(true);  reply("OK BT ON"); }
+    else if (kw(cmd, "BT OFF"))     { picolink_request_radio(false); reply("OK BT OFF"); }
+    else if (kw(cmd, "DETACH"))     { reply("OK DETACH"); picolink_request_detach_toggle(); }
+    else if (kw(cmd, "BOOTLOADER")) { reply("OK BOOTLOADER"); sleep_ms(100); reset_usb_boot(0, 0); }
+    else if (cmd[0])                reply("ERR unknown command");
+}
+
+/* emit an intruder alert line (called from main loop as the queue drains) */
+void control_emit_alert(const void *devp) {
+    const bt_dev_t *d = (const bt_dev_t *)devp;
+    char buf[176];
+    snprintf(buf, sizeof(buf),
+        "ALERT {\"kind\":\"%s\",\"addr\":\"%02X:%02X:%02X:%02X:%02X:%02X\","
+        "\"name\":\"%s\",\"rssi\":%d,\"dist_m\":%.1f,\"uptime_ms\":%lu}",
+        d->kind == BT_LE ? "ble" : "classic",
+        d->addr[0], d->addr[1], d->addr[2], d->addr[3], d->addr[4], d->addr[5],
+        d->name, d->rssi, (double)btmon_distance_m(d->rssi),
+        (unsigned long)to_ms_since_boot(get_absolute_time()));
+    reply(buf);
 }
 
 void control_task(void) {

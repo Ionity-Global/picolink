@@ -64,6 +64,9 @@ static int scan_cb(void *env, const cyw43_ev_scan_result_t *r) {
     return 0;
 }
 
+static char join_ssid[33];
+static bool joining;
+
 void wifi_scan_init(void) {
     critical_section_init(&lock);
     memset(nets, 0, sizeof(nets));
@@ -72,6 +75,37 @@ void wifi_scan_init(void) {
     next_scan = make_timeout_time_ms(1500);
     logf_pl("WiFi RADAR armed");
 }
+
+void wifi_join(const char *ssid, const char *pass) {
+    if (!ssid || !ssid[0]) return;
+    strncpy(join_ssid, ssid, sizeof(join_ssid) - 1);
+    join_ssid[sizeof(join_ssid) - 1] = 0;
+    joining = true;
+    size_t pl = pass ? strlen(pass) : 0;
+    logf_pl("WiFi join \"%s\"...", join_ssid);
+    CYW43_THREAD_ENTER
+    int err = cyw43_wifi_join(&cyw43_state, strlen(join_ssid), (const uint8_t *)join_ssid,
+                              pl, (const uint8_t *)pass,
+                              pl ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN, NULL, 0);
+    CYW43_THREAD_EXIT
+    if (err) { logf_pl("WiFi join err %d", err); joining = false; join_ssid[0] = 0; }
+}
+
+void wifi_leave(void) {
+    joining = false;
+    join_ssid[0] = 0;
+    CYW43_THREAD_ENTER
+    cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
+    CYW43_THREAD_EXIT
+    logf_pl("WiFi left network");
+}
+
+int wifi_link_status(void) {
+    if (!joining) return CYW43_LINK_DOWN;
+    return cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
+}
+
+const char *wifi_join_ssid(void) { return joining ? join_ssid : ""; }
 
 void wifi_scan_task(void) {
     if (!ready) return;

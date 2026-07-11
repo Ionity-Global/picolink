@@ -10,12 +10,16 @@
 #include "wifi_scan.h"
 #include "btmon.h"
 
-typedef enum { SCR_STATUS = 0, SCR_WIFI, SCR_BT, SCR_LOGS, SCR_ABOUT, SCR_COUNT } screen_t;
+typedef enum { SCR_STATUS = 0, SCR_WIFI, SCR_BT, SCR_PRESENCE, SCR_LOGS, SCR_ABOUT, SCR_COUNT } screen_t;
 
 static screen_t screen = SCR_STATUS;
 static bool display_on = true;
 static absolute_time_t next_render;
 static uint32_t last_log_seq;
+
+/* intruder banner */
+static char alert_who[22];
+static absolute_time_t alert_until;
 
 static int wifi_rank;
 static absolute_time_t next_net_hop;
@@ -150,6 +154,34 @@ static void render_bt(void) {
     }
 }
 
+/* horizontal meter: filled squares out of `max` */
+static void meter(int x, int y, int val, int max, int cells) {
+    for (int i = 0; i < cells; i++) {
+        int bx = x + i * 8;
+        int on = (val * cells + max / 2) / (max ? max : 1) > i;
+        if (on) oled_fill_rect(bx, y, 6, 8, true);
+        else { oled_hline(bx, bx + 5, y, true); oled_hline(bx, bx + 5, y + 7, true);
+               for (int yy = y; yy <= y + 7; yy++) { oled_pixel(bx, yy, true); oled_pixel(bx + 5, yy, true); } }
+    }
+}
+
+static void render_presence(void) {
+    btmon_presence_t pr = btmon_presence();
+    header("PRESENCE RADAR");
+    const char *state = pr.near >= 4 ? "BUSY" : pr.near >= 1 ? "OCCUPIED" : "QUIET";
+    text2(4, 14, state);
+    char l[24];
+    snprintf(l, sizeof(l), "near %d", pr.near);
+    oled_text(2, 33, l);
+    meter(48, 32, pr.near, 8, 9);
+    snprintf(l, sizeof(l), "move %d", pr.moving);
+    oled_text(2, 45, l);
+    meter(48, 44, pr.moving, 8, 9);
+    oled_hline(0, 127, 55, true);
+    snprintf(l, sizeof(l), "%d BT devices tracked", pr.total);
+    oled_text(2, 57, l);
+}
+
 static void render_logs(void) {
     header("LOGS");
     for (int i = 0; i < 6; i++) {
@@ -175,20 +207,48 @@ static void render_about(void) {
     oled_text(2, 56, "(c)2026 Ionity Global");
 }
 
+void ui_flash_alert(const char *who) {
+    strncpy(alert_who, who ? who : "new device", sizeof(alert_who) - 1);
+    alert_who[sizeof(alert_who) - 1] = 0;
+    alert_until = make_timeout_time_ms(3500);
+    next_render = 0;   /* render immediately */
+}
+
+static void render_alert(void) {
+    oled_fill_rect(0, 0, OLED_WIDTH, OLED_HEIGHT, true);   /* solid banner */
+    oled_text_inv(30, 6, "! INTRUDER !");
+    oled_hline(6, 121, 18, false);
+    oled_text_inv(6, 26, "New device in range:");
+    char w[22]; strncpy(w, alert_who, 21); w[21] = 0;
+    oled_text_inv(6, 40, w);
+    oled_text_inv(6, 54, "check BT / Presence");
+}
+
 void ui_task(void) {
     if (!display_on) return;
+
+    /* intruder banner takes over for a few seconds */
+    if (!time_reached(alert_until)) {
+        if (time_reached(next_render)) {
+            next_render = make_timeout_time_ms(250);
+            oled_clear(); render_alert(); oled_flush();
+        }
+        return;
+    }
+
     bool live = (screen == SCR_LOGS && log_seq() != last_log_seq) ||
-                (screen == SCR_BT);
+                (screen == SCR_BT) || (screen == SCR_PRESENCE);
     if (!time_reached(next_render) && !live) return;
     next_render = make_timeout_time_ms(250);
     last_log_seq = log_seq();
     oled_clear();
     switch (screen) {
-        case SCR_STATUS: render_status(); break;
-        case SCR_WIFI:   render_wifi();   break;
-        case SCR_BT:     render_bt();     break;
-        case SCR_LOGS:   render_logs();   break;
-        case SCR_ABOUT:  render_about();  break;
+        case SCR_STATUS:   render_status();   break;
+        case SCR_WIFI:     render_wifi();     break;
+        case SCR_BT:       render_bt();       break;
+        case SCR_PRESENCE: render_presence(); break;
+        case SCR_LOGS:     render_logs();     break;
+        case SCR_ABOUT:    render_about();    break;
         default: break;
     }
     oled_flush();

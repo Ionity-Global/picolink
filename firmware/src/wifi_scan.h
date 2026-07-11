@@ -19,6 +19,14 @@ typedef struct {
 void wifi_scan_init(void);          /* bring STA up, first scan            */
 void wifi_scan_task(void);          /* kick scans, expire old entries      */
 int  wifi_scan_count(void);
+
+/* ---- station join/leave (link-level association, WPA2) ---- */
+/* Associates the CYW43 to an AP so credentials/link can be verified. This is
+ * a Bluetooth dongle, so no host IP traffic is routed — link status only. */
+void        wifi_join(const char *ssid, const char *pass);
+void        wifi_leave(void);
+int         wifi_link_status(void);         /* CYW43_LINK_* */
+const char *wifi_join_ssid(void);           /* "" if not joining */
 /* rank 0 = strongest. Returns false past end. Copies out under lock. */
 bool wifi_scan_get(int rank, wifi_net_t *out);
 /* AEDi channel-congestion insight, <= 21 chars for the OLED */
