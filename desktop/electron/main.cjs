@@ -15,6 +15,11 @@ const { execFile } = require('node:child_process');
 const PICOLINK_VID = 0x2E8A;   // Raspberry Pi
 const PICOLINK_PID = 0x986A;   // IONITY PicoLink
 
+/* enable the experimental Web Bluetooth LE scanning API (requestLEScan)
+ * so the BLE tab can do a live all-advertiser scan with RSSI + AD data */
+app.commandLine.appendSwitch('enable-experimental-web-platform-features');
+app.commandLine.appendSwitch('enable-features', 'WebBluetooth,WebBluetoothConfirmPairingSupport');
+
 let win = null;
 let tray = null;
 let radioOn = true;
@@ -35,12 +40,13 @@ const logFilePath = () =>
 /* repo root = two levels up from desktop/electron (…/picolink) */
 const repoRoot = () => path.resolve(__dirname, '..', '..');
 
-function createWindow() {
+function createWindow(startHidden) {
   win = new BrowserWindow({
     width: 1080,
     height: 720,
     minWidth: 820,
     minHeight: 560,
+    show: !startHidden,
     backgroundColor: '#0d1b2a',
     autoHideMenuBar: true,
     title: 'IONITY PicoLink Console',
@@ -310,8 +316,20 @@ ipcMain.handle('telemetry-log', (_e, stat) => {
   return { ok: true };
 });
 
+/* ---- autorun (launch at login) + start-minimized ---- */
+ipcMain.handle('get-autorun', () => {
+  const s = app.getLoginItemSettings();
+  return { openAtLogin: s.openAtLogin };
+});
+ipcMain.handle('set-autorun', (_e, { openAtLogin, minimized }) => {
+  app.setLoginItemSettings({ openAtLogin: !!openAtLogin, args: minimized ? ['--hidden'] : [] });
+  return { ok: true, openAtLogin: app.getLoginItemSettings().openAtLogin };
+});
+
 app.whenReady().then(() => {
-  createWindow();
+  const startHidden = process.argv.includes('--hidden') ||
+    (app.getLoginItemSettings().wasOpenedAsHidden);
+  createWindow(startHidden);
   buildTray();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(); else win.show();

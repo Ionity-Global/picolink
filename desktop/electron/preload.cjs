@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('picolink', {
   dbClear:     ()     => ipcRenderer.invoke('db-clear'),
   dbExport:    ()     => ipcRenderer.invoke('db-export'),
   telemetryLog:(st)   => ipcRenderer.invoke('telemetry-log', st),
+  getAutorun:  ()     => ipcRenderer.invoke('get-autorun'),
+  setAutorun:  (p)    => ipcRenderer.invoke('set-autorun', p),
 
   platform: process.platform
 });

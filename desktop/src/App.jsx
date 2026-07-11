@@ -11,9 +11,10 @@ import { aiInsight } from './insight.js';
 import { deviceType } from './fingerprint.js';
 import { analyzeSecurity } from './security.js';
 import { OPTIONAL_SERVICES, gattName, decodeValue, props as charProps } from './gatt.js';
+import { parseCommand, COMMAND_HINTS } from './command.js';
 
 const REPO = 'https://github.com/Ionity-Global/picolink';
-const TABS = ['Dashboard', 'Security', 'Recon', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
+const TABS = ['Dashboard', 'Security', 'Recon', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs', 'Settings'];
 
 /* trusted-device watchlist, persisted locally (Electron renderer) */
 function useTrusted() {
@@ -486,8 +487,64 @@ function BlePanel({ s }) {
   const deviceRef = useRef(null);
   const charRef = useRef({});                  // uuid -> BluetoothRemoteGATTCharacteristic
 
+  /* live all-advertiser scan (requestLEScan) */
+  const [live, setLive] = useState([]);        // sorted array for render
+  const [liveOn, setLiveOn] = useState(false);
+  const advMap = useRef(new Map());            // id -> record
+  const advDev = useRef(new Map());            // id -> BluetoothDevice (for connect)
+  const scanRef = useRef(null);
+
   useEffect(() => { window.picolink?.onBleScanList((list) => setPicker({ list })); }, []);
   const supported = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+
+  const onAdv = (ev) => {
+    const id = ev.device?.id || 'unknown';
+    const uuids = [...(ev.uuids || [])];
+    const svc = []; ev.serviceData?.forEach((_v, k) => svc.push(k));
+    const mfg = []; ev.manufacturerData?.forEach((_v, k) => mfg.push('0x' + k.toString(16).padStart(4, '0')));
+    const prev = advMap.current.get(id) || { first: Date.now(), rssiHist: [] };
+    const rec = {
+      id, name: ev.device?.name || prev.name || '(no name)',
+      rssi: ev.rssi, txPower: ev.txPower ?? prev.txPower,
+      uuids: uuids.length ? uuids : prev.uuids || [],
+      mfg: mfg.length ? mfg : prev.mfg || [], svc: svc.length ? svc : prev.svc || [],
+      appearance: ev.appearance ?? prev.appearance, last: Date.now(), first: prev.first,
+      rssiHist: [...(prev.rssiHist || []), ev.rssi].slice(-10)
+    };
+    advMap.current.set(id, rec);
+    advDev.current.set(id, ev.device);
+  };
+
+  const liveScan = async () => {
+    setErr('');
+    if (!navigator.bluetooth?.requestLEScan) { setErr('requestLEScan not available in this build — use "Pick & connect" instead.'); return; }
+    try {
+      navigator.bluetooth.addEventListener('advertisementreceived', onAdv);
+      scanRef.current = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true, keepRepeatedDevices: true });
+      setLiveOn(true);
+      const iv = setInterval(() => {
+        const now = Date.now();
+        const arr = [...advMap.current.values()].filter(r => now - r.last < 30000)
+          .sort((a, b) => b.rssi - a.rssi);
+        setLive(arr);
+      }, 800);
+      scanRef.current._iv = iv;
+    } catch (e) { setErr('scan failed: ' + e.message); }
+  };
+  const stopLive = () => {
+    try { scanRef.current?.stop?.(); } catch {}
+    try { clearInterval(scanRef.current?._iv); } catch {}
+    try { navigator.bluetooth.removeEventListener('advertisementreceived', onAdv); } catch {}
+    scanRef.current = null; setLiveOn(false);
+  };
+  const connectId = async (id) => {
+    const d = advDev.current.get(id); if (d) await connect(d);
+  };
+  const trend = (h) => {
+    if (!h || h.length < 4) return '·';
+    const d = h[h.length - 1] - h[0];
+    return d > 6 ? 'approaching' : d < -6 ? 'receding' : 'steady';
+  };
 
   const vlog = (uuid, name, decoded, kind = 'read') =>
     setLogv(l => [{ t: new Date(), uuid, name, decoded, kind, key: Math.random().toString(36).slice(2) }, ...l.slice(0, 199)]);
@@ -603,8 +660,11 @@ function BlePanel({ s }) {
           <div className="row-btns">
             {dev?.connected && <button className="ghost" onClick={readAll}><i className="ti ti-refresh" aria-hidden /> read all</button>}
             {dev ? <button className="ghost" onClick={disconnect}>{dev.connected ? 'Disconnect' : 'Close'}</button> : null}
-            <button onClick={scan} disabled={!supported || !!busy}>
-              <i className="ti ti-bluetooth" aria-hidden /> {busy === 'scan' ? 'Scanning…' : busy === 'connect' ? 'Connecting…' : 'Scan'}
+            <button className={liveOn ? 'on' : ''} onClick={liveOn ? stopLive : liveScan} disabled={!supported}>
+              <i className="ti ti-radar" aria-hidden /> {liveOn ? 'Stop scan' : 'Nearby (all)'}
+            </button>
+            <button className="ghost" onClick={scan} disabled={!supported || !!busy}>
+              <i className="ti ti-bluetooth" aria-hidden /> {busy === 'connect' ? 'Connecting…' : 'Pick & connect'}
             </button>
           </div>
         </div>
@@ -625,8 +685,32 @@ function BlePanel({ s }) {
               <span><label>Characteristics</label>{tree.reduce((n, s) => n + s.chars.length, 0)}</span>
             </div>
           </div>
-        ) : <p className="hint">Scan, pick a device, and PicoLink connects over BLE — enumerating every service &amp; characteristic, reading values, and subscribing to live notifications.</p>}
+        ) : <p className="hint">“Nearby (all)” does a live scan of every BLE advertiser around you (address, RSSI, movement, services, manufacturer). Tap a row or “Pick &amp; connect” to open GATT.</p>}
       </section>
+
+      {(liveOn || live.length > 0) && (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Nearby BLE <small>· {live.length} advertisers {liveOn ? '(scanning live)' : '(stopped)'}</small></h2>
+          </div>
+          <table className="tbl">
+            <thead><tr><th>Name</th><th>Address</th><th>dBm</th><th>Move</th><th>Services / mfg</th><th></th></tr></thead>
+            <tbody>
+              {live.slice(0, 60).map(r => (
+                <tr key={r.id}>
+                  <td>{r.name}</td>
+                  <td className="mono">{r.id.slice(0, 20)}</td>
+                  <td className="mono">{r.rssi}</td>
+                  <td className={trend(r.rssiHist) === 'approaching' ? 'sec-open' : trend(r.rssiHist) === 'receding' ? 'muted' : ''}>{trend(r.rssiHist)}</td>
+                  <td className="mono" style={{ fontSize: '.68rem' }}>{[...r.uuids.map(gattName), ...r.mfg].slice(0, 3).join(' ') || '—'}</td>
+                  <td><button className="ghost tiny" onClick={() => connectId(r.id)}>connect</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="insight-note">Live LE scan via the PicoLink radio. Chromium reports a stable per-session device id (not the hardware MAC); the dongle’s own monitor shows real MACs. “Move” is RSSI-trend (approaching / receding / steady).</p>
+        </section>
+      )}
 
       {tree.length > 0 && (
         <section className="panel">
