@@ -55,13 +55,26 @@ static void send_status(void) {
     reply(buf);
 }
 
+/* CYW43 auth_mode bits: 0=open, bit0 WEP, bit1 WPA, bit2 WPA2, bit3 WPA3(SAE) */
+static const char *wifi_sec(uint8_t a) {
+    if (a == 0)      return "open";
+    if (a & 0x08)    return "wpa3";
+    if (a & 0x04)    return "wpa2";
+    if (a & 0x02)    return "wpa";
+    if (a & 0x01)    return "wep";
+    return "sec";
+}
+
 static void send_wifi(void) {
     tud_cdc_write_str("WIFI {\"nets\":[");
     wifi_net_t n;
     for (int i = 0; wifi_scan_get(i, &n); i++) {
-        char item[96];
-        snprintf(item, sizeof(item), "%s{\"ssid\":\"%s\",\"rssi\":%d,\"ch\":%u}",
-                 i ? "," : "", n.ssid, n.rssi, n.channel);
+        char item[144];
+        snprintf(item, sizeof(item),
+            "%s{\"ssid\":\"%s\",\"rssi\":%d,\"ch\":%u,\"sec\":\"%s\","
+            "\"bssid\":\"%02X:%02X:%02X:%02X:%02X:%02X\"}",
+            i ? "," : "", n.ssid, n.rssi, n.channel, wifi_sec(n.auth),
+            n.bssid[0], n.bssid[1], n.bssid[2], n.bssid[3], n.bssid[4], n.bssid[5]);
         tud_cdc_write_str(item);
         tud_cdc_write_flush();
     }
@@ -80,14 +93,16 @@ static void send_devs(bt_kind_t kind, const char *tag) {
 
     bt_dev_t d;
     for (int i = 0; btmon_get(kind, i, &d); i++) {
-        char item[176];
+        char item[224];
         int n = snprintf(item, sizeof(item),
             "%s{\"addr\":\"%02X:%02X:%02X:%02X:%02X:%02X\",\"name\":\"%s\","
-            "\"rssi\":%d,\"dist_m\":%.1f,\"seen_ms\":%lu",
+            "\"rssi\":%d,\"dist_m\":%.1f,\"seen_ms\":%lu,\"first_ms\":%lu,"
+            "\"hits\":%u,\"moving\":%s,\"cat\":\"%s\"",
             i ? "," : "",
             d.addr[0], d.addr[1], d.addr[2], d.addr[3], d.addr[4], d.addr[5],
             d.name, d.rssi, (double)btmon_distance_m(d.rssi),
-            (unsigned long)d.seen_ms);
+            (unsigned long)d.seen_ms, (unsigned long)d.first_ms,
+            d.hits, d.moving ? "true" : "false", d.cat);
         if (kind == BT_CLASSIC)
             n += snprintf(item + n, sizeof(item) - n, ",\"cod\":\"0x%06lX\"}", (unsigned long)d.cls);
         else

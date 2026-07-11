@@ -29,6 +29,7 @@ typedef struct {
     bt_kind_t kind;
     uint8_t   addr[6];        /* big-endian display order                  */
     char      name[BTMON_NAME_LEN];
+    char      cat[12];        /* AD signature: findmy/tile/smarttag/etc.   */
     int8_t    rssi;           /* dBm (latest)                              */
     int8_t    rssi_min;       /* rolling window min                        */
     int8_t    rssi_max;       /* rolling window max                        */

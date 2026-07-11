@@ -307,3 +307,18 @@ button.tiny { padding: 3px 8px; font-size: .68rem; }
 .toast span { display: block; font-size: .72rem; color: var(--muted); }
 .toast .x { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; }
 @keyframes slidein { from { transform: translateX(20px); opacity: 0; } }
+
+/* ═══════════════ v1.5.0 security/network ═══════════════ */
+.badge.danger { background: var(--err); color: #2a1620; }
+.posture { font-size: .72rem; letter-spacing: .1em; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
+.posture.ssecure { color: var(--ok); border-color: var(--ok); }
+.posture.scaution { color: var(--warn); border-color: var(--warn); }
+.posture.satrisk { color: var(--err); border-color: var(--err); }
+.insight-list .sev-crit .ti { color: var(--err); }
+.cat-badge { background: #0f2036; border: 1px solid var(--cyan-dim); color: var(--cyan);
+  border-radius: 6px; padding: 1px 7px; font-size: .68rem; font-family: monospace; }
+.trusted-row td { opacity: .55; }
+.sec-open { color: var(--warn); white-space: nowrap; }
+.sec-open .ti { font-size: 14px; vertical-align: -2px; }
+.sec-ok { color: var(--ok); white-space: nowrap; }
+.sec-ok .ti { font-size: 14px; vertical-align: -2px; }

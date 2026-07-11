@@ -55,6 +55,7 @@ static int scan_cb(void *env, const cyw43_ev_scan_result_t *r) {
         }
         n->rssi = r->rssi;
         n->channel = (uint8_t)r->channel;
+        n->auth = r->auth_mode;
         memcpy(n->bssid, r->bssid, 6);
         n->seen_ms = now;
         generation++;

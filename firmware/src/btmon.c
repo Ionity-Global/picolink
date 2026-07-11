@@ -99,6 +99,43 @@ static void queue_alert(const bt_dev_t *e) {
     aq_head = nxt;
 }
 
+/* classify an AD/EIR blob by well-known tracker/beacon signatures */
+static void extract_cat(const uint8_t *d, int len, char *cat) {
+    cat[0] = 0;
+    int i = 0;
+    while (i < len) {
+        int flen = d[i];
+        if (flen == 0 || i + 1 + flen > len) break;
+        uint8_t type = d[i + 1];
+        const uint8_t *v = &d[i + 2];
+        int vlen = flen - 1;
+        if ((type == 0x02 || type == 0x03) && vlen >= 2) {   /* 16-bit service UUIDs */
+            for (int k = 0; k + 1 < vlen; k += 2) {
+                uint16_t u = v[k] | (v[k + 1] << 8);
+                if (u == 0xFEED || u == 0xFEEC) { strcpy(cat, "tile"); return; }
+                if (u == 0xFD5A)                { strcpy(cat, "smarttag"); return; }
+                if (u == 0xFEAA)                { strcpy(cat, "eddystone"); return; }
+            }
+        } else if (type == 0x16 && vlen >= 2) {              /* service data */
+            uint16_t u = v[0] | (v[1] << 8);
+            if (u == 0xFEED || u == 0xFEEC) { strcpy(cat, "tile"); return; }
+            if (u == 0xFD5A)                { strcpy(cat, "smarttag"); return; }
+            if (u == 0xFEAA)                { strcpy(cat, "eddystone"); return; }
+        } else if (type == 0xFF && vlen >= 2) {              /* manufacturer specific */
+            uint16_t co = v[0] | (v[1] << 8);
+            if (co == 0x004C) {                              /* Apple */
+                if (vlen >= 4 && v[2] == 0x02 && v[3] == 0x15) { strcpy(cat, "ibeacon"); return; }
+                if (vlen >= 3 && (v[2] == 0x12 || v[2] == 0x07 || v[2] == 0x19)) { strcpy(cat, "findmy"); return; }
+                strcpy(cat, "apple"); return;
+            }
+            if (co == 0x0075) { strcpy(cat, "samsung"); return; }
+            if (co == 0x0006) { strcpy(cat, "mswift"); return; }
+            if (co == 0x00E0) { strcpy(cat, "google"); return; }
+        }
+        i += 1 + flen;
+    }
+}
+
 static void record(bt_kind_t kind, const uint8_t addr_le[6], int8_t rssi,
                    uint32_t cls, uint8_t addr_type, const uint8_t *ad, int adlen) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -126,6 +163,9 @@ static void record(bt_kind_t kind, const uint8_t addr_le[6], int8_t rssi,
         char nm[BTMON_NAME_LEN] = {0};
         extract_name(ad, adlen, nm);
         if (nm[0]) strncpy(e->name, nm, BTMON_NAME_LEN - 1);
+        char ct[12] = {0};
+        extract_cat(ad, adlen, ct);
+        if (ct[0]) strncpy(e->cat, ct, sizeof(e->cat) - 1);
     }
     /* decay the rolling window so motion reflects recent movement */
     if (e->hits % 16 == 0) { e->rssi_min = rssi - 1; e->rssi_max = rssi + 1; }

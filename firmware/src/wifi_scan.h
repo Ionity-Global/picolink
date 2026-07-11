@@ -12,6 +12,7 @@ typedef struct {
     int16_t rssi;        /* dBm                    */
     uint8_t channel;
     uint8_t bssid[6];
+    uint8_t auth;        /* CYW43 auth_mode bitmask (0 = open) */
     uint32_t seen_ms;    /* last time heard        */
     bool    used;
 } wifi_net_t;

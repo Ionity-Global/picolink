@@ -9,15 +9,30 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSerial } from './useSerial.js';
 import { aiInsight } from './insight.js';
 import { deviceType } from './fingerprint.js';
+import { analyzeSecurity } from './security.js';
 
 const REPO = 'https://github.com/Ionity-Global/picolink';
-const TABS = ['Dashboard', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
+const TABS = ['Dashboard', 'Security', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
+
+/* trusted-device watchlist, persisted locally (Electron renderer) */
+function useTrusted() {
+  const [trusted, setTrusted] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('picolink.trusted') || '[]')); }
+    catch { return new Set(); }
+  });
+  const save = (set) => { localStorage.setItem('picolink.trusted', JSON.stringify([...set])); setTrusted(new Set(set)); };
+  const trust = (addr) => { const n = new Set(trusted); n.add(addr); save(n); };
+  const untrust = (addr) => { const n = new Set(trusted); n.delete(addr); save(n); };
+  return { trusted, trust, untrust };
+}
 
 export default function App() {
   const s = useSerial();
+  const tw = useTrusted();
   const [tab, setTab] = useState('Dashboard');
   const [appVer, setAppVer] = useState('');
   const [update, setUpdate] = useState(null);
+  const sec = analyzeSecurity(s, tw.trusted);
 
   useEffect(() => { window.picolink?.version().then(setAppVer); }, []);
   useEffect(() => { window.picolink?.radioState(s.stat?.radio === 'on'); }, [s.stat?.radio]);
@@ -68,6 +83,7 @@ export default function App() {
         {TABS.map(t => (
           <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
             {t}
+            {t === 'Security' && sec.threats > 0 && <span className="badge danger">{sec.threats}</span>}
             {t === 'BLE' && s.ble.length > 0 && <span className="badge">{s.ble.length}</span>}
             {t === 'Bluetooth' && s.btClassic.length > 0 && <span className="badge">{s.btClassic.length}</span>}
             {t === 'WiFi Radar' && s.wifi.length > 0 && <span className="badge">{s.wifi.length}</span>}
@@ -77,6 +93,7 @@ export default function App() {
 
       <main>
         {tab === 'Dashboard'  && <Dashboard s={s} />}
+        {tab === 'Security'   && <SecurityPanel s={s} sec={sec} tw={tw} />}
         {tab === 'BLE'        && <BlePanel s={s} />}
         {tab === 'Bluetooth'  && <ClassicPanel s={s} />}
         {tab === 'WiFi Radar' && <WifiPanel s={s} />}
@@ -173,6 +190,70 @@ function Dashboard({ s }) {
           <b>{insight.score}/100 · {insight.band}</b>
         </div>
         <Briefing s={s} insight={insight} />
+      </section>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Security ─────────────────────────── */
+function SecurityPanel({ s, sec, tw }) {
+  const all = [...(s.ble || []), ...(s.btClassic || [])].sort((a, b) => b.rssi - a.rssi);
+  return (
+    <div className="stack">
+      <section className="panel insight">
+        <div className="panel-head">
+          <h2><i className="ti ti-shield-lock" aria-hidden /> Security posture</h2>
+          <span className={`posture s-${sec.band.replace(' ', '')}`}>{sec.band.toUpperCase()}</span>
+        </div>
+        <p className="insight-head">{sec.headline}</p>
+        <div className="insight-foot">
+          <span className="mono">Posture score</span>
+          <div className="score-bar"><div style={{ width: sec.score + '%' }}
+            className={sec.score >= 80 ? 's-clear' : sec.score >= 55 ? 's-moderate' : 's-congested'} /></div>
+          <b>{sec.score}/100</b>
+        </div>
+        <ul className="insight-list" style={{ marginTop: '14px' }}>
+          {sec.findings.map((f, i) => (
+            <li key={i} className={`sev-${f.sev === 'crit' ? 'warn' : f.sev}`}>
+              <i className={`ti ${f.icon}`} aria-hidden />
+              <span><b>{f.title}.</b> {f.text}
+                {f.addr && !tw.trusted.has(f.addr) &&
+                  <button className="ghost tiny" style={{ marginLeft: 6 }} onClick={() => tw.trust(f.addr)}>trust</button>}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="insight-note">Passive detection from the dongle’s radio view — evil-twin &amp; open APs, following-trackers, BLE floods. Heuristic; “trust” a device to silence it.</p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Devices in range <small>({all.length})</small></h2>
+          <span className="hint" style={{ margin: 0 }}>{tw.trusted.size} trusted</span>
+        </div>
+        {all.length === 0 ? <p className="hint">Nothing yet — start a Windows Bluetooth scan to populate.</p> : (
+          <table className="tbl">
+            <thead><tr><th>Type</th><th>Name / addr</th><th>Signature</th><th>dBm</th><th>~m</th><th></th></tr></thead>
+            <tbody>
+              {all.map((d, i) => {
+                const [label, icon] = deviceType(d);
+                const isT = tw.trusted.has(d.addr);
+                return (
+                  <tr key={i} className={isT ? 'trusted-row' : ''}>
+                    <td className="dtype"><i className={`ti ${icon}`} aria-hidden /> {label}</td>
+                    <td>{d.name || <span className="mono">{d.addr}</span>}</td>
+                    <td>{d.cat ? <span className="cat-badge">{d.cat}</span> : <span className="muted">—</span>}</td>
+                    <td className="mono">{d.rssi === -127 ? '—' : d.rssi}</td>
+                    <td className="mono">{d.dist_m != null ? d.dist_m.toFixed(1) : '—'}</td>
+                    <td>{isT
+                      ? <button className="ghost tiny" onClick={() => tw.untrust(d.addr)}>untrust</button>
+                      : <button className="ghost tiny" onClick={() => tw.trust(d.addr)}>trust</button>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </section>
     </div>
   );
@@ -408,13 +489,22 @@ function WifiPanel({ s }) {
         </div>
         {s.wifi.length === 0 ? <p className="hint">Listening… the dongle sweeps the air every 8 seconds.</p> : (
           <table className="tbl">
-            <thead><tr><th>SSID</th><th>Signal</th><th>dBm</th><th>Ch</th><th></th></tr></thead>
+            <thead><tr><th>SSID</th><th>Security</th><th>Signal</th><th>dBm</th><th>Ch</th><th></th></tr></thead>
             <tbody>
-              {[...s.wifi].sort((a,b) => b.rssi - a.rssi).map((n, i) => (
-                <tr key={i}><td>{n.ssid || '(hidden)'}</td><td>{bars(n.rssi)}</td>
+              {[...s.wifi].sort((a,b) => b.rssi - a.rssi).map((n, i) => {
+                const openish = n.sec === 'open' || n.sec === 'wep';
+                return (
+                  <tr key={i}>
+                    <td>{n.ssid || '(hidden)'}</td>
+                    <td className={openish ? 'sec-open' : 'sec-ok'}>
+                      <i className={`ti ${openish ? 'ti-lock-open' : 'ti-lock'}`} aria-hidden /> {(n.sec || '—').toUpperCase()}
+                    </td>
+                    <td>{bars(n.rssi)}</td>
                     <td className="mono">{n.rssi}</td><td className="mono">{n.ch}</td>
-                    <td>{n.ssid && <button className="ghost tiny" onClick={() => pick(n.ssid)}>use</button>}</td></tr>
-              ))}
+                    <td>{n.ssid && <button className="ghost tiny" onClick={() => pick(n.ssid)}>use</button>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
