@@ -161,6 +161,47 @@ ipcMain.handle('apply-update', async () => {
 });
 ipcMain.handle('relaunch', () => { app.relaunch(); app.exit(0); });
 
+/* ---- Cloud AI briefing ----
+ * Saves a telemetry snapshot + a briefing to the user's Documents\IONITY\
+ * briefings folder (which OneDrive/Drive mirror if that's their Documents).
+ * If ANTHROPIC_API_KEY is set in the environment, it also asks Claude for a
+ * natural-language read; otherwise it writes the local heuristic summary. */
+ipcMain.handle('save-briefing', async (_e, payload) => {
+  const dir = path.join(app.getPath('documents'), 'IONITY', 'briefings');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const jsonPath = path.join(dir, `picolink-snapshot-${stamp}.json`);
+  fs.writeFileSync(jsonPath, JSON.stringify(payload.snapshot, null, 2));
+
+  let briefing = payload.localBriefing || '';
+  let usedCloud = false;
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (key) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5', max_tokens: 700,
+          messages: [{ role: 'user', content:
+            'You are analysing live RF telemetry from an IONITY PicoLink dongle. ' +
+            'Give a concise, friendly situational briefing (what is around, congestion, anything notable). ' +
+            'Telemetry JSON:\n' + JSON.stringify(payload.snapshot) }]
+        })
+      });
+      const j = await res.json();
+      const txt = j?.content?.[0]?.text;
+      if (txt) { briefing = txt; usedCloud = true; }
+    } catch (e) { briefing += `\n\n(cloud briefing failed: ${e.message})`; }
+  }
+  const mdPath = path.join(dir, `picolink-briefing-${stamp}.md`);
+  fs.writeFileSync(mdPath,
+    `# IONITY PicoLink briefing\n\n_${new Date().toLocaleString()}_ · ` +
+    `${usedCloud ? 'Claude cloud analysis' : 'on-device heuristic'}\n\n${briefing}\n`);
+  return { ok: true, mdPath, jsonPath, usedCloud };
+});
+ipcMain.handle('open-path', (_e, p) => shell.showItemInFolder(p));
+
 app.whenReady().then(() => {
   createWindow();
   buildTray();

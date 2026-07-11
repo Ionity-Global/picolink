@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSerial } from './useSerial.js';
 import { aiInsight } from './insight.js';
+import { deviceType } from './fingerprint.js';
 
 const REPO = 'https://github.com/Ionity-Global/picolink';
 const TABS = ['Dashboard', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
@@ -86,6 +87,19 @@ export default function App() {
         © 2026 Ionity Global (Pty) Ltd · ionity.today · works fully offline · {' '}
         <a onClick={() => window.picolink?.openExternal(REPO)}>github.com/Ionity-Global/picolink</a>
       </footer>
+
+      <div className="toasts">
+        {s.alerts.slice(0, 4).map(a => (
+          <div key={a.key} className="toast" onClick={() => { setTab('Bluetooth'); s.dismissAlert(a.key); }}>
+            <i className="ti ti-alert-triangle" aria-hidden />
+            <div>
+              <b>New {a.kind === 'ble' ? 'BLE' : 'Classic'} device</b>
+              <span>{a.name || a.addr} · {a.rssi} dBm · ~{a.dist_m?.toFixed?.(1)} m</span>
+            </div>
+            <button className="x" onClick={(e) => { e.stopPropagation(); s.dismissAlert(a.key); }}>×</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -130,10 +144,10 @@ function Dashboard({ s }) {
         </div>
 
         <div className="grid">
-          <div className="cell"><label>TX → host</label><b>{st?.tx_pkts ?? '—'}</b><small>{bytes(st?.tx_bytes)}</small></div>
-          <div className="cell"><label>RX → radio</label><b>{st?.rx_pkts ?? '—'}</b><small>{bytes(st?.rx_bytes)}</small></div>
-          <div className="cell"><label>Core temp</label><b>{st?.temp_c != null ? st.temp_c.toFixed(1) + '°' : '—'}</b><small>RP2350</small></div>
-          <div className="cell"><label>Drops</label><b>{st?.drops ?? '—'}</b><small>&nbsp;</small></div>
+          <div className="cell"><label>Near / moving</label><b>{st?.near ?? 0}<span className="sub"> / {st?.moving ?? 0}</span></b><small>presence radar</small></div>
+          <div className="cell"><label>Core temp</label><b>{st?.temp_c != null ? st.temp_c.toFixed(1) + '°' : '—'}</b><small>{s.id?.board ?? 'RP2350'}</small></div>
+          <div className="cell"><label>TX / RX</label><b className="small">{(st?.tx_pkts ?? '—')} / {(st?.rx_pkts ?? '—')}</b><small>{bytes(st?.tx_bytes)} / {bytes(st?.rx_bytes)}</small></div>
+          <div className="cell"><label>WiFi link</label><b className="small">{st?.wifi_link ?? 'down'}</b><small>{st?.wifi_join || 'not joined'}</small></div>
         </div>
 
         <div className="dev-info">
@@ -158,8 +172,41 @@ function Dashboard({ s }) {
           <div className="score-bar"><div style={{ width: insight.score + '%' }} className={`s-${insight.band}`} /></div>
           <b>{insight.score}/100 · {insight.band}</b>
         </div>
-        <p className="insight-note">On-device heuristics over live WiFi + BLE + Classic + thermal telemetry. No cloud; fully offline.</p>
+        <Briefing s={s} insight={insight} />
       </section>
+    </div>
+  );
+}
+
+/* ─────────────────────────── cloud briefing ─────────────────────────── */
+function Briefing({ s, insight }) {
+  const [state, setState] = useState(null);   // {busy}|{ok,mdPath,usedCloud}
+  const run = async () => {
+    setState({ busy: true });
+    const snapshot = {
+      at: new Date().toISOString(),
+      device: s.id, stat: s.stat,
+      wifi: s.wifi, classic: s.btClassic, ble: s.ble,
+      insight: { headline: insight.headline, score: insight.score, band: insight.band,
+                 points: insight.points.map(p => p.text) }
+    };
+    const localBriefing = `${insight.headline}\n\n` + insight.points.map(p => `- ${p.text}`).join('\n') +
+      `\n\nRF environment score: ${insight.score}/100 (${insight.band}).`;
+    const r = await window.picolink?.saveBriefing({ snapshot, localBriefing });
+    setState(r || { ok: false });
+  };
+  return (
+    <div className="brief">
+      <button onClick={run} disabled={state?.busy}>
+        <i className="ti ti-cloud-bolt" aria-hidden /> {state?.busy ? 'Generating…' : 'Cloud AI briefing'}
+      </button>
+      {state?.ok && (
+        <span className="brief-done">
+          Saved ({state.usedCloud ? 'Claude' : 'local'}) ·{' '}
+          <a onClick={() => window.picolink?.showItem(state.mdPath)}>open</a>
+        </span>
+      )}
+      <p className="insight-note">On-device heuristics over live WiFi + BLE + Classic + thermal telemetry, saved to Documents\IONITY. Set an ANTHROPIC_API_KEY to add a Claude write-up; fully offline otherwise.</p>
     </div>
   );
 }
@@ -328,24 +375,51 @@ function WifiPanel({ s }) {
     const lvl = rssi >= -50 ? 5 : rssi >= -60 ? 4 : rssi >= -70 ? 3 : rssi >= -80 ? 2 : 1;
     return <span className="bars">{[0,1,2,3,4].map(i => <i key={i} className={i < lvl ? 'f' : ''} style={{ height: (4 + i * 3) + 'px' }} />)}</span>;
   };
+  const [ssid, setSsid] = useState('');
+  const [pass, setPass] = useState('');
+  const link = s.stat?.wifi_link ?? 'down';
+  const joined = s.stat?.wifi_join;
+  const joinedUp = link === 'up' || link === 'noip' || link === 'join';
+  const pick = (n) => setSsid(n);
+  const connect = () => { if (ssid) s.send(`WIFI JOIN "${ssid}" "${pass}"`); };
+
   return (
-    <section className="panel">
-      <div className="panel-head">
-        <h2>WiFi RADAR</h2>
-        <button className="ghost" onClick={() => s.send('WIFI')}><i className="ti ti-refresh" aria-hidden /> refresh</button>
-      </div>
-      {s.wifi.length === 0 ? <p className="hint">Listening… the dongle sweeps the air every 8 seconds.</p> : (
-        <table className="tbl">
-          <thead><tr><th>SSID</th><th>Signal</th><th>dBm</th><th>Ch</th></tr></thead>
-          <tbody>
-            {[...s.wifi].sort((a,b) => b.rssi - a.rssi).map((n, i) => (
-              <tr key={i}><td>{n.ssid || '(hidden)'}</td><td>{bars(n.rssi)}</td>
-                  <td className="mono">{n.rssi}</td><td className="mono">{n.ch}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
+    <div className="stack">
+      <section className="panel">
+        <div className="panel-head">
+          <h2>WiFi connect</h2>
+          <span className={`wifi-link ${joinedUp ? 'up' : link.startsWith('bad') || link === 'fail' || link === 'nonet' ? 'bad' : ''}`}>
+            {joinedUp ? `linked: ${joined}` : `link ${link}`}
+          </span>
+        </div>
+        <p className="hint">Associate the dongle to an AP (WPA2) to verify credentials and link. This is a Bluetooth dongle — it proves the join at link level; it doesn’t route the PC’s internet.</p>
+        <div className="wifi-form">
+          <input placeholder="SSID" value={ssid} onChange={e => setSsid(e.target.value)} />
+          <input placeholder="password" type="password" value={pass} onChange={e => setPass(e.target.value)} />
+          <button onClick={connect} disabled={!s.connected || !ssid}><i className="ti ti-wifi" aria-hidden /> Connect</button>
+          <button className="ghost" onClick={() => s.send('WIFI LEAVE')} disabled={!s.connected}>Disconnect</button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>WiFi RADAR</h2>
+          <button className="ghost" onClick={() => s.send('WIFI')}><i className="ti ti-refresh" aria-hidden /> refresh</button>
+        </div>
+        {s.wifi.length === 0 ? <p className="hint">Listening… the dongle sweeps the air every 8 seconds.</p> : (
+          <table className="tbl">
+            <thead><tr><th>SSID</th><th>Signal</th><th>dBm</th><th>Ch</th><th></th></tr></thead>
+            <tbody>
+              {[...s.wifi].sort((a,b) => b.rssi - a.rssi).map((n, i) => (
+                <tr key={i}><td>{n.ssid || '(hidden)'}</td><td>{bars(n.rssi)}</td>
+                    <td className="mono">{n.rssi}</td><td className="mono">{n.ch}</td>
+                    <td>{n.ssid && <button className="ghost tiny" onClick={() => pick(n.ssid)}>use</button>}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -353,9 +427,16 @@ function WifiPanel({ s }) {
 function LogsPanel({ s }) {
   const endRef = useRef(null);
   const [filter, setFilter] = useState('');
+  const [chip, setChip] = useState('All');
   const [follow, setFollow] = useState(true);
   useEffect(() => { if (follow) endRef.current?.scrollIntoView({ block: 'end' }); }, [s.logs, follow]);
-  const shown = filter ? s.logs.filter(l => l.line.toLowerCase().includes(filter.toLowerCase())) : s.logs;
+  const chipMatch = (l) =>
+    chip === 'All' ? true :
+    chip === 'Sightings' ? /\b(BLE|BT )\b/.test(l.line) :
+    chip === 'Alerts' ? (l.kind === 'err' || /ALERT/.test(l.line)) :
+    chip === 'Sent' ? l.kind === 'sent' : true;
+  const shown = s.logs.filter(l => chipMatch(l) &&
+    (!filter || l.line.toLowerCase().includes(filter.toLowerCase())));
   const exportLogs = () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([s.logs.map(l => `${l.t.toISOString()} ${l.line}`).join('\n')], { type: 'text/plain' }));
@@ -365,6 +446,11 @@ function LogsPanel({ s }) {
     <section className="panel console">
       <div className="console-bar">
         <h2>Logs</h2>
+        <div className="chips">
+          {['All', 'Sightings', 'Alerts', 'Sent'].map(c => (
+            <button key={c} className={`chipbtn ${chip === c ? 'on' : ''}`} onClick={() => setChip(c)}>{c}</button>
+          ))}
+        </div>
         <input placeholder="filter…" value={filter} onChange={e => setFilter(e.target.value)} />
         <label className="chk"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} /> follow</label>
         <button className="ghost" onClick={exportLogs}>export</button>
@@ -390,17 +476,20 @@ function DeviceTable({ rows, kind, empty }) {
   const sorted = [...rows].sort((a, b) => b.rssi - a.rssi);
   return (
     <table className="tbl">
-      <thead><tr><th>Name</th><th>Address</th><th>dBm</th><th>~m</th><th>{kind === 'ble' ? 'Type' : 'Class'}</th></tr></thead>
+      <thead><tr><th>Type</th><th>Name</th><th>Address</th><th>dBm</th><th>~m</th></tr></thead>
       <tbody>
-        {sorted.map((d, i) => (
-          <tr key={i}>
-            <td>{d.name || '(unknown)'}</td>
-            <td className="mono">{d.addr}</td>
-            <td className="mono">{d.rssi === -127 ? '—' : d.rssi}</td>
-            <td className="mono">{d.dist_m != null ? d.dist_m.toFixed(1) : '—'}</td>
-            <td className="mono">{kind === 'ble' ? d.atype : d.cod}</td>
-          </tr>
-        ))}
+        {sorted.map((d, i) => {
+          const [label, icon] = deviceType(d);
+          return (
+            <tr key={i}>
+              <td className="dtype"><i className={`ti ${icon}`} aria-hidden /> {label}</td>
+              <td>{d.name || '(unknown)'}</td>
+              <td className="mono">{d.addr}</td>
+              <td className="mono">{d.rssi === -127 ? '—' : d.rssi}</td>
+              <td className="mono">{d.dist_m != null ? d.dist_m.toFixed(1) : '—'}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

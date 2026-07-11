@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('picolink', {
   checkUpdate: ()     => ipcRenderer.invoke('check-update'),
   applyUpdate: ()     => ipcRenderer.invoke('apply-update'),
   relaunch:    ()     => ipcRenderer.invoke('relaunch'),
+  saveBriefing:(p)    => ipcRenderer.invoke('save-briefing', p),
+  showItem:    (p)    => ipcRenderer.invoke('open-path', p),
 
   platform: process.platform
 });

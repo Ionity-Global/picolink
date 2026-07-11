@@ -20,6 +20,7 @@ export function useSerial() {
   const [btClassic, setBtClassic] = useState([]);
   const [ble, setBle] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [alerts, setAlerts] = useState([]);   // intruder ALERTs (newest first)
 
   const pushLog = useCallback((line, kind = 'log') => {
     const e = { t: new Date(), line, kind, key: Math.random().toString(36).slice(2) };
@@ -38,6 +39,12 @@ export function useSerial() {
     else if (line.startsWith('WIFI '))    { const j = jparse('WIFI '); if (j?.nets) setWifi(j.nets); }
     else if (line.startsWith('BTLIST '))  { const j = jparse('BTLIST '); if (j?.devs) setBtClassic(j.devs); }
     else if (line.startsWith('BLELIST ')) { const j = jparse('BLELIST '); if (j?.devs) setBle(j.devs); }
+    else if (line.startsWith('ALERT '))   {
+      const j = jparse('ALERT ');
+      if (j) { j.at = new Date(); j.key = Math.random().toString(36).slice(2);
+               setAlerts(a => [j, ...a.slice(0, 49)]); }
+      pushLog(line, 'err');
+    }
     else if (line.startsWith('OK') || line === 'PONG') pushLog(line, 'ok');
     else pushLog(line, 'device');
   }, [pushLog]);
@@ -121,5 +128,7 @@ export function useSerial() {
     return () => clearInterval(iv);
   }, [connected, send]);
 
-  return { connected, id, stat, wifi, btClassic, ble, logs, send, connect, clearLogs };
+  const dismissAlert = useCallback((key) => setAlerts(a => a.filter(x => x.key !== key)), []);
+
+  return { connected, id, stat, wifi, btClassic, ble, logs, alerts, send, connect, clearLogs, dismissAlert };
 }

@@ -267,3 +267,43 @@ main { display: block; overflow-y: auto; padding: 16px 20px; }
 
 .app-foot a { color: var(--cyan-dim); cursor: pointer; text-decoration: none; }
 .app-foot a:hover { color: var(--cyan); }
+
+/* ═══════════════ v1.4.0 additions ═══════════════ */
+.cell .sub { color: var(--muted); font-size: .9rem; font-weight: 400; }
+
+/* device type cell */
+.dtype { white-space: nowrap; }
+.dtype .ti { color: var(--cyan); margin-right: 5px; }
+
+/* cloud briefing */
+.brief { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.brief-done { font-size: .74rem; color: var(--ok); }
+.brief-done a, .wifi-form a { color: var(--cyan); cursor: pointer; }
+
+/* wifi connect form */
+.wifi-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.wifi-form input { flex: 1; min-width: 130px; background: #0f2036; border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: .82rem; }
+.wifi-link { font-size: .72rem; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px; }
+.wifi-link.up { color: var(--ok); border-color: var(--ok); }
+.wifi-link.bad { color: var(--err); border-color: var(--err); }
+button.tiny { padding: 3px 8px; font-size: .68rem; }
+
+/* log filter chips */
+.chips { display: flex; gap: 4px; margin-right: auto; }
+.chipbtn { background: transparent; border: 1px solid var(--line); color: var(--muted);
+  padding: 4px 10px; font-size: .7rem; border-radius: 999px; }
+.chipbtn.on { color: var(--cyan); border-color: var(--cyan-dim); background: #0f2036; }
+
+/* intruder toasts */
+.toasts { position: absolute; right: 16px; bottom: 44px; display: flex; flex-direction: column;
+  gap: 8px; z-index: 60; }
+.toast { display: flex; align-items: center; gap: 10px; background: #2a1620;
+  border: 1px solid var(--err); border-left: 4px solid var(--err); border-radius: 10px;
+  padding: 10px 12px; width: 320px; cursor: pointer; animation: slidein .25s ease; }
+.toast .ti { color: var(--err); font-size: 20px; }
+.toast b { display: block; font-size: .82rem; }
+.toast span { display: block; font-size: .72rem; color: var(--muted); }
+.toast .x { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; }
+@keyframes slidein { from { transform: translateX(20px); opacity: 0; } }
