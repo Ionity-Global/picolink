@@ -25,10 +25,11 @@ Plug it in and the PC gains **Bluetooth Classic (BR/EDR) and Bluetooth Low Energ
 |---|---|
 | 🔵 **Native drivers, zero install** | PicoLink enumerates as a *standard USB Bluetooth HCI radio* (USB class `E0/01/01`). Windows 10/11 loads its inbox `BTHUSB` driver and Linux loads `btusb` automatically — the "driver" ships inside every modern OS, triggered the moment you plug in. |
 | 🖥️ **OLED status screen** | Live radio state, host OS link, TX/RX packet counters, and a scrolling log — right on the dongle. |
-| 🎛️ **Two-button control** | KEY0 toggles the radio ON/OFF (long-press = full USB detach). KEY1 cycles Status / Logs / About screens. |
+| 🎛️ **Two-button control** | KEY0 toggles the radio ON/OFF (long-press = full USB detach). KEY1 cycles Status / WiFi Radar / BT Monitor / Logs / About screens. |
+| 📡 **WiFi RADAR + BT Monitor** | Beside bridging Bluetooth, the dongle passively scans the air: every nearby WiFi network (SSID, dBm, channel + congestion advice) and every Bluetooth Classic/BLE device it hears (name, RSSI, distance estimate) — shown on the OLED and in the app. |
 | 📜 **Logs everywhere** | Ring-buffered logs on-device, streamed over a built-in USB serial port, and mirrored + saved to disk by the companion app on Windows and Linux. |
-| 📦 **Onboard installer** | The dongle also mounts a tiny **IONITY** USB drive containing `INSTALL-WINDOWS.cmd` / `install-linux.sh` — double-click to fetch and set up the companion console straight from this repo. |
-| ⚛️ **PicoLink Console** | Electron + React companion app (Windows/Linux). Device auto-detect, live log viewer, radio on/off switch, stats — fully offline after `git clone` + install. |
+| 📦 **Onboard installer** | The dongle also mounts a tiny **IONITY** USB drive containing `INSTALL.CMD` / `install.sh` — double-click to fetch and set up the companion console straight from this repo. |
+| ⚛️ **PicoLink Console** | Electron + React companion app (Windows/Linux). Tabbed: **Dashboard** (with AEDI Insight RF scoring), **BLE** (Web Bluetooth scan/connect/GATT), **Bluetooth Classic**, **WiFi Radar**, **Logs**. Auto-detect, one-click self-update, fully offline after install. |
 
 <sub>*Audio (SCO/HFP) is not bridged in v1 — see [FAQ](docs/FAQ.md).</sub>
 
