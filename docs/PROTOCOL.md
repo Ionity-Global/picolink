@@ -12,6 +12,7 @@ Console speaks; you can also drive it with PuTTY / `screen /dev/ttyACM0`.
 | `STATUS` | `STAT {json}` | snapshot now |
 | `BT ON` / `BT OFF` | `OK BT ON/OFF` | soft radio gate (+ HCI reset on off) |
 | `DETACH` | `OK DETACH` | full USB detach; press KEY0 long or send again after reattach |
+| `BOOTLOADER` | `OK BOOTLOADER` | reboot into the UF2 bootloader (`RPI-RP2`/`RP2350` drive) — hands-free firmware updates, no BOOTSEL button |
 | `PING` | `PONG` | liveness |
 
 ## Unsolicited (dongle → host)

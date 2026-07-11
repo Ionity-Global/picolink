@@ -7,6 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "pico/stdlib.h"
+#include "pico/bootrom.h"
 #include "tusb.h"
 #include "picolink.h"
 #include "hci_bridge.h"
@@ -61,11 +62,12 @@ static void send_wifi(void) {
 }
 
 static void send_id(void) {
-    char buf[224];
+    char buf[256];
     snprintf(buf, sizeof(buf),
         "ID {\"product\":\"%s\",\"version\":\"%s\",\"board\":\"%s\","
-        "\"serial\":\"%s\",\"url\":\"%s\"}",
-        PICOLINK_PRODUCT, PICOLINK_VERSION, g_pl.board, g_pl.serial, PICOLINK_URL);
+        "\"display\":\"%s\",\"serial\":\"%s\",\"url\":\"%s\"}",
+        PICOLINK_PRODUCT, PICOLINK_VERSION, g_pl.board,
+        PICOLINK_DISPLAY, g_pl.serial, PICOLINK_URL);
     reply(buf);
 }
 
@@ -79,6 +81,11 @@ static void handle_line(char *cmd) {
     else if (!strcmp(cmd, "BT ON"))   { picolink_request_radio(true);  reply("OK BT ON"); }
     else if (!strcmp(cmd, "BT OFF"))  { picolink_request_radio(false); reply("OK BT OFF"); }
     else if (!strcmp(cmd, "DETACH"))  { reply("OK DETACH"); picolink_request_detach_toggle(); }
+    else if (!strcmp(cmd, "BOOTLOADER")) {
+        reply("OK BOOTLOADER");
+        sleep_ms(100);
+        reset_usb_boot(0, 0);
+    }
     else if (cmd[0])                  { reply("ERR unknown command"); }
 }
 

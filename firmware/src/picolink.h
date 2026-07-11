@@ -8,8 +8,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PICOLINK_VERSION      "1.1.0"
+#define PICOLINK_VERSION      "1.1.3"
 #define PICOLINK_PRODUCT      "IONITY PicoLink"
+#define PICOLINK_DISPLAY      "Waveshare Pico OLED 1.3"
 #define PICOLINK_URL          "https://github.com/Ionity-Global/picolink"
 
 /* ---- Waveshare Pico-OLED-1.3 (SH1107, SPI1) ---- */

@@ -225,6 +225,7 @@ export default function App() {
           <div className="dev-info">
             <span><label>Device</label>{id ? `${id.product} v${id.version}` : '—'}</span>
             <span><label>Board</label>{id?.board ?? '—'}</span>
+            <span><label>Display</label>{id?.display ?? 'Waveshare Pico OLED 1.3'}</span>
             <span><label>Serial</label>{id?.serial ?? '—'}</span>
           </div>
 

@@ -153,13 +153,14 @@ static void render_logs(void) {
 
 static void render_about(void) {
     header("ABOUT");
-    oled_text(2, 14, PICOLINK_PRODUCT);
+    oled_text(2, 13, PICOLINK_PRODUCT);
     char v[24];
     snprintf(v, sizeof(v), "v%s  %s", PICOLINK_VERSION, g_pl.board);
-    oled_text(2, 24, v);
-    oled_text(2, 34, "S/N:");
-    oled_text(26, 34, g_pl.serial);
-    oled_text(2, 46, "ionity.today");
+    oled_text(2, 23, v);
+    oled_text(2, 33, "Waveshare OLED 1.3");
+    oled_text(2, 43, "S/N:");
+    oled_text(26, 43, g_pl.serial);
+    oled_hline(0, 127, 53, true);
     oled_text(2, 56, "(c)2026 Ionity Global");
 }
 
