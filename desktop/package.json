@@ -1,7 +1,7 @@
 {
   "name": "ionity-picolink-console",
   "productName": "IONITY PicoLink Console",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Companion console for the IONITY PicoLink USB Bluetooth/BLE dongle — Dashboard, BLE scan/connect, Bluetooth Classic, WiFi radar, logs, AEDI Insight. Works fully offline.",
   "author": "Ionity Global (Pty) Ltd <ai@ionity.today>",
   "homepage": "https://github.com/Ionity-Global/picolink",

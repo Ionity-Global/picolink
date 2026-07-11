@@ -10,6 +10,7 @@ import { useSerial } from './useSerial.js';
 import { aiInsight } from './insight.js';
 import { deviceType } from './fingerprint.js';
 import { analyzeSecurity } from './security.js';
+import { OPTIONAL_SERVICES, gattName, decodeValue, props as charProps } from './gatt.js';
 
 const REPO = 'https://github.com/Ionity-Global/picolink';
 const TABS = ['Dashboard', 'Security', 'BLE', 'Bluetooth', 'WiFi Radar', 'Logs'];
@@ -292,111 +293,196 @@ function Briefing({ s, insight }) {
   );
 }
 
-/* ─────────────────────────── BLE (Web Bluetooth) ─────────────────────────── */
+/* ─────────────────────────── BLE GATT explorer ─────────────────────────── */
 function BlePanel({ s }) {
-  const [picker, setPicker] = useState(null);       // {list:[]}
-  const [conn, setConn] = useState(null);           // connected device summary
-  const [busy, setBusy] = useState(false);
+  const [picker, setPicker] = useState(null);
+  const [dev, setDev] = useState(null);       // { name, id, connected }
+  const [meta, setMeta] = useState(null);      // { rssi, txPower, mfg, appearance }
+  const [tree, setTree] = useState([]);        // [{ uuid, name, chars:[{...}] }]
+  const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
+  const [logv, setLogv] = useState([]);        // value events (newest first)
   const deviceRef = useRef(null);
+  const charRef = useRef({});                  // uuid -> BluetoothRemoteGATTCharacteristic
 
-  useEffect(() => {
-    window.picolink?.onBleScanList((list) => setPicker({ list }));
-  }, []);
-
+  useEffect(() => { window.picolink?.onBleScanList((list) => setPicker({ list })); }, []);
   const supported = typeof navigator !== 'undefined' && !!navigator.bluetooth;
 
+  const vlog = (uuid, name, decoded, kind = 'read') =>
+    setLogv(l => [{ t: new Date(), uuid, name, decoded, kind, key: Math.random().toString(36).slice(2) }, ...l.slice(0, 199)]);
+
   const scan = async () => {
-    setErr(''); setBusy(true); setPicker({ list: [] });
+    setErr(''); setBusy('scan'); setPicker({ list: [] });
     try {
       const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['generic_access', 'device_information', 'battery_service', 0x180a, 0x180f]
+        acceptAllDevices: true, optionalServices: OPTIONAL_SERVICES
       });
       setPicker(null);
       await connect(device);
     } catch (e) {
       setPicker(null);
-      if (!/cancell?ed|chooser/i.test(e.message)) setErr(e.message);
-    } finally { setBusy(false); }
-  };
-
-  const readChar = async (server, svc, chr) => {
-    try {
-      const service = await server.getPrimaryService(svc);
-      const c = await service.getCharacteristic(chr);
-      const v = await c.readValue();
-      return v;
-    } catch { return null; }
+      if (!/cancell?ed|chooser/i.test(e.message || '')) setErr(e.message);
+    } finally { setBusy(''); }
   };
 
   const connect = async (device) => {
-    setBusy(true); setErr('');
+    setBusy('connect'); setErr(''); setTree([]); setLogv([]); charRef.current = {};
     try {
       deviceRef.current = device;
-      device.addEventListener('gattserverdisconnected', () => {
-        setConn(c => c ? { ...c, connected: false } : c);
-      });
+      device.addEventListener('gattserverdisconnected', () =>
+        setDev(d => d ? { ...d, connected: false } : d));
+      setDev({ name: device.name || '(unnamed)', id: device.id, connected: true });
+
+      /* live advertisement data (RSSI, manufacturer) if the platform allows */
+      try {
+        if (device.watchAdvertisements) {
+          device.addEventListener('advertisementreceived', (ev) => {
+            const mfg = [];
+            ev.manufacturerData?.forEach((v, k) => mfg.push('0x' + k.toString(16).padStart(4, '0')));
+            setMeta({ rssi: ev.rssi, txPower: ev.txPower, appearance: ev.appearance,
+                      mfg: mfg.join(', '), at: new Date() });
+          });
+          await device.watchAdvertisements().catch(() => {});
+        }
+      } catch { /* not supported everywhere */ }
+
       const server = await device.gatt.connect();
       const services = await server.getPrimaryServices().catch(() => []);
-      const info = { name: device.name || '(unnamed)', id: device.id, connected: true, services: [], battery: null, maker: null, model: null };
-      info.services = services.map(x => x.uuid);
-
-      const bat = await readChar(server, 'battery_service', 'battery_level');
-      if (bat) info.battery = bat.getUint8(0);
-      const maker = await readChar(server, 'device_information', 'manufacturer_name_string');
-      if (maker) info.maker = new TextDecoder().decode(maker);
-      const model = await readChar(server, 'device_information', 'model_number_string');
-      if (model) info.model = new TextDecoder().decode(model);
-
-      setConn(info);
+      const built = [];
+      for (const svc of services) {
+        const chars = await svc.getCharacteristics().catch(() => []);
+        const cl = [];
+        for (const c of chars) {
+          charRef.current[c.uuid] = c;
+          const entry = { uuid: c.uuid, name: gattName(c.uuid), props: charProps(c), value: null };
+          if (c.properties.read) {
+            try { const dv = await c.readValue(); entry.value = decodeValue(c.uuid, dv); }
+            catch { /* not readable now */ }
+          }
+          cl.push(entry);
+        }
+        built.push({ uuid: svc.uuid, name: gattName(svc.uuid), chars: cl });
+      }
+      setTree(built);
     } catch (e) { setErr(e.message); }
-    finally { setBusy(false); }
+    finally { setBusy(''); }
+  };
+
+  const readChar = async (uuid, name) => {
+    const c = charRef.current[uuid]; if (!c) return;
+    try {
+      const dv = await c.readValue();
+      const d = decodeValue(uuid, dv);
+      setTree(t => t.map(s => ({ ...s, chars: s.chars.map(x => x.uuid === uuid ? { ...x, value: d } : x) })));
+      vlog(uuid, name, d, 'read');
+    } catch (e) { vlog(uuid, name, { note: 'read failed: ' + e.message }, 'err'); }
+  };
+
+  const toggleNotify = async (uuid, name, on) => {
+    const c = charRef.current[uuid]; if (!c) return;
+    try {
+      if (on) {
+        await c.startNotifications();
+        c.addEventListener('characteristicvaluechanged', (e) =>
+          vlog(uuid, name, decodeValue(uuid, e.target.value), 'notify'));
+        vlog(uuid, name, { note: 'notifications on' }, 'ok');
+      } else { await c.stopNotifications(); vlog(uuid, name, { note: 'notifications off' }, 'ok'); }
+      setTree(t => t.map(s => ({ ...s, chars: s.chars.map(x => x.uuid === uuid ? { ...x, notifying: on } : x) })));
+    } catch (e) { vlog(uuid, name, { note: 'notify failed: ' + e.message }, 'err'); }
+  };
+
+  const writeChar = async (uuid, name, str) => {
+    const c = charRef.current[uuid]; if (!c || !str) return;
+    try {
+      let bytes;
+      if (/^[0-9a-fA-F\s]+$/.test(str) && str.replace(/\s/g, '').length % 2 === 0 && /[0-9a-fA-F]{2}/.test(str))
+        bytes = new Uint8Array(str.replace(/\s/g, '').match(/../g).map(h => parseInt(h, 16)));
+      else bytes = new TextEncoder().encode(str);
+      if (c.properties.writeWithoutResponse && !c.properties.write) await c.writeValueWithoutResponse(bytes);
+      else await c.writeValue(bytes);
+      vlog(uuid, name, { note: 'wrote ' + bytes.length + ' bytes' }, 'ok');
+    } catch (e) { vlog(uuid, name, { note: 'write failed: ' + e.message }, 'err'); }
+  };
+
+  const readAll = async () => {
+    for (const svc of tree) for (const c of svc.chars)
+      if (c.props.includes('read')) await readChar(c.uuid, c.name);
   };
 
   const disconnect = () => {
     try { deviceRef.current?.gatt?.disconnect(); } catch {}
-    setConn(null);
+    setDev(null); setTree([]); setMeta(null); charRef.current = {};
   };
 
   return (
     <div className="stack">
       <section className="panel">
         <div className="panel-head">
-          <h2>BLE — scan &amp; connect</h2>
-          <button onClick={scan} disabled={!supported || busy}>
-            <i className="ti ti-bluetooth" aria-hidden /> {busy ? 'Scanning…' : 'Scan for BLE devices'}
-          </button>
+          <h2>BLE — scan, connect &amp; explore</h2>
+          <div className="row-btns">
+            {dev?.connected && <button className="ghost" onClick={readAll}><i className="ti ti-refresh" aria-hidden /> read all</button>}
+            {dev ? <button className="ghost" onClick={disconnect}>{dev.connected ? 'Disconnect' : 'Close'}</button> : null}
+            <button onClick={scan} disabled={!supported || !!busy}>
+              <i className="ti ti-bluetooth" aria-hidden /> {busy === 'scan' ? 'Scanning…' : busy === 'connect' ? 'Connecting…' : 'Scan'}
+            </button>
+          </div>
         </div>
-        {!supported && <p className="warn">Web Bluetooth isn’t available — make sure the PicoLink radio is on and Windows Bluetooth is enabled.</p>}
+        {!supported && <p className="warn">Web Bluetooth unavailable — ensure the PicoLink radio is on and Windows Bluetooth is enabled.</p>}
         {err && <p className="warn">{err}</p>}
 
-        {conn ? (
+        {dev ? (
           <div className="ble-conn">
             <div className="ble-conn-top">
-              <div className={`dot ${conn.connected ? 'on' : ''}`} />
-              <div>
-                <b>{conn.name}</b>
-                <span className="mono muted">{conn.id.slice(0, 18)}</span>
-              </div>
-              <button className="ghost" onClick={disconnect}>{conn.connected ? 'Disconnect' : 'Close'}</button>
+              <div className={`dot ${dev.connected ? 'on' : ''}`} />
+              <div><b>{dev.name}</b><span className="mono muted">{dev.id.slice(0, 22)}</span></div>
             </div>
             <div className="kv">
-              {conn.battery != null && <span><label>Battery</label>{conn.battery}%</span>}
-              {conn.maker && <span><label>Maker</label>{conn.maker}</span>}
-              {conn.model && <span><label>Model</label>{conn.model}</span>}
-              <span><label>GATT services</label>{conn.services.length}</span>
+              {meta?.rssi != null && <span><label>Live RSSI</label>{meta.rssi} dBm</span>}
+              {meta?.txPower != null && <span><label>Tx power</label>{meta.txPower} dBm</span>}
+              {meta?.mfg && <span><label>Mfg data</label>{meta.mfg}</span>}
+              <span><label>Services</label>{tree.length}</span>
+              <span><label>Characteristics</label>{tree.reduce((n, s) => n + s.chars.length, 0)}</span>
             </div>
-            {conn.services.length > 0 && (
-              <ul className="svc-list">
-                {conn.services.map(u => <li key={u} className="mono">{gattName(u)}</li>)}
-              </ul>
-            )}
           </div>
-        ) : (
-          <p className="hint">Click scan, pick a device from the list, and PicoLink connects to it over BLE — reading its GATT services, battery and device info.</p>
-        )}
+        ) : <p className="hint">Scan, pick a device, and PicoLink connects over BLE — enumerating every service &amp; characteristic, reading values, and subscribing to live notifications.</p>}
       </section>
+
+      {tree.length > 0 && (
+        <section className="panel">
+          <h2>GATT services &amp; characteristics</h2>
+          <div className="gatt">
+            {tree.map(svc => (
+              <div key={svc.uuid} className="gatt-svc">
+                <div className="gatt-svc-h"><i className="ti ti-folder" aria-hidden /> {svc.name}</div>
+                {svc.chars.map(c => (
+                  <CharRow key={c.uuid} c={c}
+                    onRead={() => readChar(c.uuid, c.name)}
+                    onNotify={(on) => toggleNotify(c.uuid, c.name, on)}
+                    onWrite={(v) => writeChar(c.uuid, c.name, v)} />
+                ))}
+                {svc.chars.length === 0 && <div className="gatt-empty">no characteristics</div>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {logv.length > 0 && (
+        <section className="panel">
+          <div className="panel-head"><h2>Live value stream <small>(reads &amp; notifications)</small></h2>
+            <button className="ghost" onClick={() => setLogv([])}>clear</button></div>
+          <div className="vlog">
+            {logv.map(e => (
+              <div key={e.key} className={`vrow ${e.kind}`}>
+                <span className="ts">{e.t.toLocaleTimeString()}</span>
+                <span className="vk">{e.kind}</span>
+                <span className="vn">{e.name}</span>
+                <span className="vv">{e.decoded.note || e.decoded.text || e.decoded.hex || ''}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="panel">
         <h2>Ambient BLE advertisers <small>(passive, from the dongle)</small></h2>
@@ -404,8 +490,39 @@ function BlePanel({ s }) {
       </section>
 
       {picker && <BlePicker picker={picker}
-        onPick={(id) => { window.picolink?.bleSelect(id); }}
+        onPick={(id) => window.picolink?.bleSelect(id)}
         onCancel={() => { window.picolink?.bleCancel(); setPicker(null); }} />}
+    </div>
+  );
+}
+
+function CharRow({ c, onRead, onNotify, onWrite }) {
+  const [wv, setWv] = useState('');
+  const writable = c.props.includes('write') || c.props.includes('writeNR');
+  return (
+    <div className="gatt-char">
+      <div className="gatt-char-h">
+        <span className="cn">{c.name}</span>
+        <span className="cprops">{c.props.map(p => <span key={p} className="pbadge">{p}</span>)}</span>
+        <span className="cbtns">
+          {c.props.includes('read') && <button className="ghost tiny" onClick={onRead}>read</button>}
+          {(c.props.includes('notify') || c.props.includes('indicate')) &&
+            <button className={`ghost tiny ${c.notifying ? 'on' : ''}`} onClick={() => onNotify(!c.notifying)}>{c.notifying ? 'stop' : 'notify'}</button>}
+        </span>
+      </div>
+      {c.value && (
+        <div className="gatt-val">
+          {c.value.note && <span className="vnote">{c.value.note}</span>}
+          {c.value.text && <span className="vtext">“{c.value.text}”</span>}
+          {c.value.hex && <span className="mono vhex">{c.value.hex}</span>}
+        </div>
+      )}
+      {writable && (
+        <div className="gatt-write">
+          <input placeholder="text or hex bytes" value={wv} onChange={e => setWv(e.target.value)} />
+          <button className="ghost tiny" onClick={() => { onWrite(wv); setWv(''); }}>write</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -585,13 +702,3 @@ function DeviceTable({ rows, kind, empty }) {
   );
 }
 
-function gattName(uuid) {
-  const known = {
-    '00001800': 'Generic Access', '00001801': 'Generic Attribute',
-    '0000180a': 'Device Information', '0000180f': 'Battery Service',
-    '0000180d': 'Heart Rate', '00001812': 'HID', '00001809': 'Health Thermometer',
-    '0000fe9f': 'Google', '0000feaa': 'Eddystone'
-  };
-  const p = uuid.slice(0, 8);
-  return known[p] ? `${known[p]}  (${p})` : uuid;
-}
