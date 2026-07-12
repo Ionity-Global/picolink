@@ -42,6 +42,7 @@ export default function App() {
    * surface the update bar if a newer commit exists (online only). */
   useEffect(() => {
     const t = setTimeout(async () => {
+      if (localStorage.getItem('picolink.autoupdate') === '0') return;
       try { const r = await window.picolink?.checkUpdate();
         if (r && r.behind) setUpdate({ ...r, auto: true }); } catch {}
     }, 4000);
@@ -123,6 +124,7 @@ export default function App() {
         {tab === 'Bluetooth'  && <ClassicPanel s={s} />}
         {tab === 'WiFi Radar' && <WifiPanel s={s} />}
         {tab === 'Logs'       && <LogsPanel s={s} />}
+        {tab === 'Settings'   && <SettingsPanel s={s} appVer={appVer} onCheckUpdate={checkUpdate} />}
       </main>
 
       <footer className="app-foot">
@@ -825,8 +827,11 @@ function ClassicPanel({ s }) {
             </button>
           </div>
         </div>
-        <p className="hint">These are Classic (BR/EDR) devices the radio hears during a Windows inquiry. Pairing is an OS action — “Pair in Windows” opens the system dialog, which uses this dongle as the adapter.</p>
-        <DeviceTable rows={s.btClassic} kind="classic" empty="Start ‘Add device’ in Windows Bluetooth to make Classic devices broadcast." />
+        <p className="hint"><b>Speakers, headsets, mice and keyboards are Bluetooth Classic (A2DP/HFP/HID)</b> — the app can’t connect or stream to them directly, because Web Bluetooth only talks to BLE/GATT. That’s a browser/OS rule, not a dongle limit. Pair/stream to a speaker from <b>Windows Bluetooth</b> — it uses this dongle as the adapter. The list below is what the radio hears during a Windows inquiry.</p>
+        <div style={{ margin: '4px 0 10px' }}>
+          <button onClick={() => window.picolink?.openExternal('ms-settings:bluetooth')}><i className="ti ti-volume" aria-hidden /> Connect a speaker / device in Windows</button>
+        </div>
+        <DeviceTable rows={s.btClassic} kind="classic" empty="Start ‘Add device’ in Windows Bluetooth (or play audio) to make Classic devices show here." />
       </section>
     </div>
   );
@@ -939,6 +944,57 @@ function LogsPanel({ s }) {
         <div ref={endRef} />
       </div>
     </section>
+  );
+}
+
+/* ─────────────────────────── Settings ─────────────────────────── */
+function SettingsPanel({ s, appVer, onCheckUpdate }) {
+  const [autorun, setAutorun] = useState(false);
+  const [minimized, setMinimized] = useState(() => localStorage.getItem('picolink.minimized') === '1');
+  const [autoUpd, setAutoUpd] = useState(() => localStorage.getItem('picolink.autoupdate') !== '0');
+
+  useEffect(() => { window.picolink?.getAutorun().then(r => r && setAutorun(!!r.openAtLogin)); }, []);
+
+  const toggleAutorun = async (v) => {
+    setAutorun(v);
+    await window.picolink?.setAutorun({ openAtLogin: v, minimized });
+  };
+  const toggleMin = (v) => { setMinimized(v); localStorage.setItem('picolink.minimized', v ? '1' : '0');
+    if (autorun) window.picolink?.setAutorun({ openAtLogin: true, minimized: v }); };
+  const toggleAuto = (v) => { setAutoUpd(v); localStorage.setItem('picolink.autoupdate', v ? '1' : '0'); };
+
+  const Row = ({ label, desc, checked, onChange }) => (
+    <div className="set-row">
+      <div><b>{label}</b><span>{desc}</span></div>
+      <label className="switch"><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} /><span /></label>
+    </div>
+  );
+
+  return (
+    <div className="stack">
+      <section className="panel">
+        <h2>Startup &amp; updates</h2>
+        <Row label="Launch at login" desc="Start PicoLink Console automatically when Windows starts." checked={autorun} onChange={toggleAutorun} />
+        <Row label="Start minimized to tray" desc="When auto-launched, open hidden in the system tray." checked={minimized} onChange={toggleMin} />
+        <Row label="Auto-check for updates" desc="On launch, check GitHub and offer to pull the latest." checked={autoUpd} onChange={toggleAuto} />
+        <div className="btn-row" style={{ marginTop: '12px' }}>
+          <button className="ghost" onClick={onCheckUpdate}>Check for updates now</button>
+          <button className="ghost" onClick={() => window.picolink?.openLogs()}>Open log folder</button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Device &amp; app</h2>
+        <div className="dev-info">
+          <span><label>App</label>v{appVer || '—'}</span>
+          <span><label>Firmware</label>{s.id ? `v${s.id.version} (${s.id.board})` : '—'}</span>
+          <span><label>Display</label>{s.id?.display ?? 'Waveshare Pico OLED 1.3'}</span>
+          <span><label>Serial</label>{s.id?.serial ?? '—'}</span>
+          <span><label>Link</label>{s.connected ? 'connected' : 'searching'}</span>
+        </div>
+        <p className="insight-note">© 2026 Ionity Global (Pty) Ltd · <a onClick={() => window.picolink?.openExternal(REPO)}>github.com/Ionity-Global/picolink</a></p>
+      </section>
+    </div>
   );
 }
 

@@ -364,3 +364,11 @@ button.tiny { padding: 3px 8px; font-size: .68rem; }
 .recon-loc .loc-ok { color: var(--ok); }
 .recon-loc .loc-ok a { color: var(--cyan); cursor: pointer; }
 .recon-loc .loc-ok .ti { vertical-align: -2px; margin-right: 3px; }
+
+/* ═══════════════ v1.8.0 settings ═══════════════ */
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid #172d47; }
+.set-row:last-of-type { border-bottom: none; }
+.set-row b { display: block; font-size: .88rem; }
+.set-row span { display: block; font-size: .74rem; color: var(--muted); margin-top: 2px; }
+.cbtns .on, button.on { color: var(--ok); border-color: var(--ok); }
